@@ -382,9 +382,13 @@ void render_title(uint8_t selection, bool has_save) {
         text(i == 1 && !has_save ? C_GRAY : (i == selection ? C_YELLOW : C_WHITE),
              129, 94 + i * 15, items[i]);
     }
-    text(C_WHITE, 61, 173, "BUILD WITHOUT LIMITS. SHAPE A CITY.");
-    text(C_WHITE, 95, 230, "2ND SELECT   ARROWS MOVE");
-    text(C_GRAY, 3, 230, METROCE_VERSION);
+    gfx_SetColor(C_NAVY);
+    gfx_FillRectangle(0, 168, 320, 14);
+    text(C_WHITE, 61, 171, "BUILD WITHOUT LIMITS. SHAPE A CITY.");
+    gfx_SetColor(C_NAVY);
+    gfx_FillRectangle(0, 224, 320, 16);
+    text(C_WHITE, 95, 228, "2ND SELECT   ARROWS MOVE");
+    text(C_CYAN, 3, 228, METROCE_VERSION);
     gfx_SwapDraw();
 }
 
@@ -395,10 +399,10 @@ void render_tool_menu(uint8_t selection) {
         uint8_t col = (i - 1) / 6;
         uint8_t row = (i - 1) % 6;
         uint8_t x = 31 + col * 135;
-        uint8_t y = 49 + row * 22;
+        uint8_t y = 49 + row * 21;
         if (i == selection) {
             gfx_SetColor(C_BLUE);
-            gfx_FillRectangle(x - 2, y - 2, 128, 20);
+            gfx_FillRectangle(x - 2, y - 3, 128, 14);
         }
         {
             char hot[2];
@@ -407,9 +411,11 @@ void render_tool_menu(uint8_t selection) {
             text(C_YELLOW, x, y, hot);
         }
         text(i == selection ? C_YELLOW : C_WHITE, x + 10, y, tile_name((TileType)i));
-        text(C_GRAY, x, y + 9, tile_description((TileType)i));
     }
-    text(C_WHITE, 36, 199, "ARROWS/NUMBER PICK  2ND OK  CLEAR BACK");
+    gfx_SetColor(C_BLUE);
+    gfx_FillRectangle(30, 180, 260, 14);
+    text(C_WHITE, 34, 183, tile_description((TileType)selection));
+    text(C_GRAY, 36, 199, "ARROWS/NUMBER PICK  2ND OK  CLEAR BACK");
     gfx_SwapDraw();
 }
 

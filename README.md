@@ -1,4 +1,4 @@
-# MetroCE V1.1.0
+# MetroCE V1.1.1
 
 MetroCE is an original isometric city-building sandbox for the **TI-84 Plus CE / CE-T**, including the CE-T Python Edition. Its visual direction is inspired by classic isometric city simulators: diamond terrain, pixel-art towers, trees, roads, traffic, a construction sidebar, and a minimap.
 
@@ -71,6 +71,9 @@ The generated sprites and convimg configuration are included, so Pillow is not r
 `tests/run.sh` compiles the input, area, undo and cursor-movement logic on your computer (needs `gcc`, not CEdev) against a stubbed keypad and runs about 18,000 checks. It does not run the calculator build.
 
 ## Changelog
+
+**V1.1.1** (layout fix)
+- Construction menu: only the selected tool's description is shown, on its own line, so the two columns no longer overlap. Title screen tagline and footer got solid backing so they no longer sit on the skyline art.
 
 **V1.1.0** (controls)
 - Arrows now move in the screen direction; diagonal chords move along the grid.
