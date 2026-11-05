@@ -8,6 +8,7 @@
 #define MAP_H 64
 #define MAP_TILES (MAP_W * MAP_H)
 #define SAVE_NAME "METROSAV"
+#define METROCE_VERSION "V1.1.0"
 
 #define COVERAGE_PARK      0x01
 #define COVERAGE_POLICE    0x02
@@ -80,11 +81,26 @@ void city_simulate(void);
 bool city_build(uint8_t x, uint8_t y, TileType type);
 bool city_bulldoze(uint8_t x, uint8_t y);
 bool city_road_access(uint8_t x, uint8_t y);
+
+/* Applies a tool to an L-shaped path (path=true) or a filled box (path=false).
+ * type == TILE_EMPTY bulldozes. Returns how many tiles actually changed. */
+uint16_t city_apply_shape(uint8_t ax, uint8_t ay, uint8_t bx, uint8_t by,
+                          bool path, bool flip, TileType type);
+
+/* One-level undo. Call city_undo_begin() at the start of every stroke; the
+ * snapshot is taken lazily on the first real change, so a click that changes
+ * nothing never overwrites your previous undo. Only tiles touched by the
+ * stroke are restored, so growth elsewhere is left alone.
+ * city_undo_toggle(): 0 = nothing to undo, 1 = undone, 2 = redone. */
+void city_undo_begin(void);
+uint8_t city_undo_toggle(void);
 bool city_save(void);
 bool city_load(void);
 bool city_has_save(void);
 const char *city_rank(void);
 const char *tile_name(TileType type);
+const char *tile_short_name(TileType type);
+char tile_hotkey(TileType type);
 const char *tile_description(TileType type);
 
 #endif

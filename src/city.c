@@ -1,4 +1,5 @@
 #include "city.h"
+#include "area.h"
 
 #include <fileioc.h>
 #include <stdlib.h>
@@ -12,6 +13,50 @@ City city;
 CityStats stats;
 uint8_t coverage[MAP_TILES];
 uint8_t traffic[MAP_TILES];
+
+/* ---- one-level undo (kept outside City so the save format is unchanged) ---- */
+static Tile undo_tiles[MAP_TILES];
+static uint8_t undo_mask[MAP_TILES / 8];
+static bool undo_pending;   /* stroke started, snapshot not taken yet        */
+static bool undo_open;      /* a snapshot exists and the mask is being filled */
+static bool undo_undone;    /* currently showing the "before" state           */
+
+static void undo_reset(void) {
+    undo_pending = false;
+    undo_open = false;
+    undo_undone = false;
+}
+
+/* Must be called BEFORE the tile at index i is modified. */
+static void undo_touch(uint16_t i) {
+    if (undo_pending) {
+        memcpy(undo_tiles, city.tiles, sizeof(undo_tiles));
+        memset(undo_mask, 0, sizeof(undo_mask));
+        undo_pending = false;
+        undo_open = true;
+        undo_undone = false;
+    }
+    if (undo_open) undo_mask[i >> 3] |= (uint8_t)(1u << (i & 7));
+}
+
+void city_undo_begin(void) {
+    undo_pending = true;
+}
+
+uint8_t city_undo_toggle(void) {
+    uint16_t i;
+    if (!undo_open) return 0;
+    for (i = 0; i < MAP_TILES; i++) {
+        if (undo_mask[i >> 3] & (1u << (i & 7))) {
+            Tile t = city.tiles[i];
+            city.tiles[i] = undo_tiles[i];
+            undo_tiles[i] = t;
+        }
+    }
+    undo_pending = false;
+    undo_undone = !undo_undone;
+    return undo_undone ? 1 : 2;
+}
 
 static uint16_t index_of(uint8_t x, uint8_t y) {
     return (uint16_t)y * MAP_W + x;
@@ -99,6 +144,7 @@ static uint8_t utility_percent(uint32_t capacity, uint32_t use) {
 void city_new(void) {
     uint16_t i;
     memset(&city, 0, sizeof(city));
+    undo_reset();
     city.magic = CITY_MAGIC;
     city.version = CITY_VERSION;
     city.res_tax = 9;
@@ -114,6 +160,7 @@ void city_new(void) {
 bool city_build(uint8_t x, uint8_t y, TileType type) {
     Tile *tile = &city.tiles[index_of(x, y)];
     if (type <= TILE_EMPTY || type >= TILE_COUNT || tile->type != TILE_EMPTY) return false;
+    undo_touch(index_of(x, y));
     tile->type = (uint8_t)type;
     tile->level = is_zone(type) ? 0 : 1;
     tile->age = 0;
@@ -123,10 +170,32 @@ bool city_build(uint8_t x, uint8_t y, TileType type) {
 bool city_bulldoze(uint8_t x, uint8_t y) {
     Tile *tile = &city.tiles[index_of(x, y)];
     if (tile->type == TILE_EMPTY) return false;
+    undo_touch(index_of(x, y));
     memset(tile, 0, sizeof(*tile));
     tile->variation = (uint8_t)rand();
     traffic[index_of(x, y)] = 0;
     return true;
+}
+
+typedef struct {
+    TileType type;      /* TILE_EMPTY means bulldoze */
+    uint16_t changed;
+} ShapeCtx;
+
+static void shape_cell(uint8_t x, uint8_t y, void *ctx) {
+    ShapeCtx *s = (ShapeCtx *)ctx;
+    bool ok = s->type == TILE_EMPTY ? city_bulldoze(x, y) : city_build(x, y, s->type);
+    if (ok) s->changed++;
+}
+
+uint16_t city_apply_shape(uint8_t ax, uint8_t ay, uint8_t bx, uint8_t by,
+                          bool path, bool flip, TileType type) {
+    ShapeCtx s;
+    s.type = type;
+    s.changed = 0;
+    if (path) area_path(ax, ay, bx, by, flip, shape_cell, &s);
+    else area_rect(ax, ay, bx, by, shape_cell, &s);
+    return s.changed;
 }
 
 void city_simulate(void) {
@@ -288,6 +357,20 @@ const char *tile_name(TileType type) {
     return type < TILE_COUNT ? names[type] : "Unknown";
 }
 
+const char *tile_short_name(TileType type) {
+    static const char *names[TILE_COUNT] = {
+        "Grass", "Road", "Res", "Com", "Ind", "Power",
+        "Water", "Sewage", "Park", "Police", "Fire", "School"
+    };
+    return type < TILE_COUNT ? names[type] : "?";
+}
+
+/* Number-key shortcut for each tool: 1-9, 0, then the decimal point. */
+char tile_hotkey(TileType type) {
+    static const char keys[] = "?1234567890.";
+    return type < TILE_COUNT ? keys[type] : '?';
+}
+
 const char *tile_description(TileType type) {
     static const char *descriptions[TILE_COUNT] = {
         "Open land", "Connect zones and carry traffic", "Homes for your citizens",
@@ -326,6 +409,7 @@ bool city_load(void) {
     ok = ti_Read(&city, sizeof(city), 1, slot) == 1;
     ti_Close(slot);
     if (!ok || city.magic != CITY_MAGIC || city.version != CITY_VERSION) return false;
+    undo_reset();
     city_simulate();
     return true;
 }

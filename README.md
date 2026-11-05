@@ -1,8 +1,10 @@
-# MetroCE
+# MetroCE V1.1.0
 
 MetroCE is an original isometric city-building sandbox for the **TI-84 Plus CE / CE-T**, including the CE-T Python Edition. Its visual direction is inspired by classic isometric city simulators: diamond terrain, pixel-art towers, trees, roads, traffic, a construction sidebar, and a minimap.
 
 **Sandbox mode has unlimited money.** The challenge comes from designing a functioning city rather than managing a cash balance.
+
+New here? Read [TUTORIAL.md](TUTORIAL.md), or press `Mode` in the game for the built-in help and tutorial.
 
 ## Play
 
@@ -15,24 +17,33 @@ MetroCE is an original isometric city-building sandbox for the **TI-84 Plus CE /
 
 | Key | Action |
 |---|---|
-| Arrow keys | Move the isometric cursor and scroll the city |
-| `2nd` | Build the selected item; hold while moving to paint roads/zones |
-| `Alpha` | Bulldoze |
+| Arrow keys | Move the cursor in the direction you press (screen-aligned) |
+| Two arrows at once | Diagonal = move along the map grid (use this for straight roads) |
+| Hold an arrow | Auto-repeat, then speeds up (1, 2, then 3 tiles per step) |
+| `2nd` | Build the selected item. Hold while moving to paint |
+| `Alpha` | Bulldoze. Hold while moving to paint |
+| `Stat` | Area / line tool: mark a corner, move, then `2nd` builds, `Alpha` clears, `Clear` cancels |
+| `Stat` (again) | Road tool only: flip the L-shaped line |
+| `Del` | Undo / redo your last stroke |
+| `1`-`9`, `0`, `.` | Pick a tool directly (shown in the `Y=` menu) |
+| `+` / `-` | Next / previous tool |
 | `Y=` | Construction menu |
-| `Window` | Tax and service-funding panel |
+| `Window` | Tax and service-funding panel (hold Left/Right to repeat) |
 | `Zoom` | Save to the `METROSAV` AppVar |
-| `Trace` | Pause/resume |
+| `Trace` | Pause / resume (resumes at the speed you left) |
 | `Graph` | Cycle simulation speed |
 | `Enter` | City statistics and RCI demand |
-| `Mode` | Controls screen |
-| `Clear` | Save and exit |
+| `Mode` | Help and tutorial (8 pages, Left/Right to flip) |
+| `Clear` | Press twice to save and exit |
+
+The bottom bar shows the active tool and its number key, what is under the cursor (zones with no road show a red NO ROAD), the simulation speed, and the cursor coordinates.
 
 ## Simulation systems
 
 - 64×64 scrolling isometric map
 - Residential, commercial, and industrial zoning
 - Three development densities per zone
-- Road-access requirements and local road congestion
+- Road-access requirements
 - Electricity, water, and sewage capacity
 - Separate RCI tax rates and adjustable service funding
 - Parks, police, fire, and schools with local coverage areas
@@ -41,7 +52,7 @@ MetroCE is an original isometric city-building sandbox for the **TI-84 Plus CE /
 - Growth, upgrading, and abandonment
 - Persistent AppVar save
 
-This is a compact calculator interpretation, not a full Cities: Skylines or SimCity simulation. Traffic is aggregated onto nearby roads rather than individually routed, and utilities use citywide capacity rather than pipe/power-line networks.
+This is a compact calculator interpretation, not a full Cities: Skylines or SimCity simulation. Utilities use citywide capacity rather than pipe/power-line networks. Road congestion is calculated and displayed but does not currently affect the simulation.
 
 ## Build from source
 
@@ -53,7 +64,26 @@ make gfx
 make
 ```
 
-The generated sprites and convimg configuration are included, so Pillow is not required for a normal build. Output appears in `bin/METROCE.8xp`.
+The generated sprites and convimg configuration are included, so Pillow is not required for a normal build. Output appears in `bin/METROCE.8xp`. Built and checked against CEdev v15.0.
+
+### Tests
+
+`tests/run.sh` compiles the input, area, undo and cursor-movement logic on your computer (needs `gcc`, not CEdev) against a stubbed keypad and runs about 18,000 checks. It does not run the calculator build.
+
+## Changelog
+
+**V1.1.0** (controls)
+- Arrows now move in the screen direction; diagonal chords move along the grid.
+- Tap moves exactly one step; hold repeats after a short delay and accelerates.
+- Painting keeps the trail 4-connected, so roads never touch only at corners.
+- Area / line tool, one-level undo / redo, number-key tool select, `+` / `-` tool cycling.
+- Cursor inspector and NO ROAD warning in the bottom bar; message when a tile is in use.
+- Menus repeat when held (budget values were 1 tap per step). Fixed the construction menu jumping to a non-existent tool when pressing Right on Water tower.
+- Simulation now ticks on the clock instead of per frame, so input responsiveness no longer changes game speed.
+- Pause resumes at the previous speed. Year counter now advances. `Clear` needs a second press to exit.
+- Built-in help is 8 pages: controls plus a tutorial of how the simulation works.
+
+**V1.0.0** original release (version assumed; the uploaded source carried no version number).
 
 ## Artwork
 
