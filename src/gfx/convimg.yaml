@@ -1,0 +1,81 @@
+palettes:
+  - name: global_palette
+    fixed-entries:
+      - color: {index: 0, r: 255, g: 0, b: 128}
+      - color: {index: 1, r: 255, g: 255, b: 255}
+      - color: {index: 2, r: 20, g: 31, b: 50}
+      - color: {index: 3, r: 146, g: 174, b: 213}
+      - color: {index: 4, r: 115, g: 125, b: 137}
+      - color: {index: 5, r: 54, g: 62, b: 70}
+      - color: {index: 6, r: 83, g: 139, b: 67}
+      - color: {index: 7, r: 238, g: 205, b: 76}
+      - color: {index: 8, r: 213, g: 74, b: 67}
+      - color: {index: 9, r: 82, g: 184, b: 204}
+      - color: {index: 10, r: 0, g: 0, b: 0}
+      - color: {index: 11, r: 206, g: 194, b: 154}
+    images: automatic
+
+converts:
+  - name: sprites
+    palette: global_palette
+    transparent-color-index: 0
+    images:
+      - com1_0.png
+      - com1_1.png
+      - com2_0.png
+      - com2_1.png
+      - com3_0.png
+      - com3_1.png
+      - fire.png
+      - grass0.png
+      - grass1.png
+      - grass2.png
+      - grass3.png
+      - ind1_0.png
+      - ind1_1.png
+      - ind2_0.png
+      - ind2_1.png
+      - ind3_0.png
+      - ind3_1.png
+      - park.png
+      - police.png
+      - power.png
+      - res1_0.png
+      - res1_1.png
+      - res2_0.png
+      - res2_1.png
+      - res3_0.png
+      - res3_1.png
+      - road0.png
+      - road1.png
+      - road10.png
+      - road11.png
+      - road12.png
+      - road13.png
+      - road14.png
+      - road15.png
+      - road2.png
+      - road3.png
+      - road4.png
+      - road5.png
+      - road6.png
+      - road7.png
+      - road8.png
+      - road9.png
+      - school.png
+      - sewage.png
+      - tree0.png
+      - tree1.png
+      - tree2.png
+      - water.png
+      - zone_com.png
+      - zone_ind.png
+      - zone_res.png
+
+outputs:
+  - type: c
+    include-file: gfx.h
+    palettes:
+      - global_palette
+    converts:
+      - sprites
