@@ -17,6 +17,7 @@ void delay(uint16_t ms) { (void)ms; }
 /* render.h stubs so main.c links */
 void render_init(void) {}
 void render_invalidate(void) {}
+void render_snapshot_backdrop(void) {}
 void render_end(void) {}
 void render_frame(const UiState *u, uint16_t a, const char *m) { (void)u; (void)a; (void)m; }
 void render_title(uint8_t s, bool h) { (void)s; (void)h; }
@@ -269,6 +270,38 @@ static int test_move(void) {
       sx = 1; sy = 1; idx = (uint8_t)((sy + 1) * 3 + (sx + 1));
       mx = map_dx[idx]; my = map_dy[idx];
       CHECK((mx == 1 && my == 0));                                       /* Right+Down = +x grid axis */
+    }
+
+    /* every single-arrow step changes (x+y) parity, so no tile is unreachable */
+    { int8_t dirs[4][2] = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};   /* Up, Right, Down, Left */
+      int k, j;
+      for (k = 0; k < 4; k++) {
+          ui.cursor_x = 30; ui.cursor_y = 30; cardinal_phase = 0;
+          for (j = 0; j < 20; j++) {
+              int before = (ui.cursor_x + ui.cursor_y) & 1;
+              move_cursor(&ui, dirs[k][0], dirs[k][1], 1, false, false);
+              CHECK(((ui.cursor_x + ui.cursor_y) & 1) != before);
+          }
+      }
+      /* two Right presses = one old full step: (+1,-1) */
+      ui.cursor_x = 30; ui.cursor_y = 30; cardinal_phase = 0;
+      move_cursor(&ui, 1, 0, 1, false, false); move_cursor(&ui, 1, 0, 1, false, false);
+      CHECK(ui.cursor_x == 31 && ui.cursor_y == 29);
+      /* reachability: from the centre, single-arrow presses alone reach every tile in a 9x9 block */
+      { uint8_t seen[9][9]; int tx, ty, reached = 0, steps;
+        memset(seen, 0, sizeof(seen));
+        for (steps = 0; steps < 200000; steps++) {       /* random walk of single presses */
+            static unsigned r = 7;
+            r = r * 1103515245u + 12345u;
+            if (steps == 0) { ui.cursor_x = 30; ui.cursor_y = 30; }
+            k = (int)((r >> 16) & 3);
+            move_cursor(&ui, dirs[k][0], dirs[k][1], 1, false, false);
+            tx = (int)ui.cursor_x - 26; ty = (int)ui.cursor_y - 26;
+            if (tx >= 0 && tx < 9 && ty >= 0 && ty < 9) seen[ty][tx] = 1;
+        }
+        for (ty = 0; ty < 9; ty++) for (tx = 0; tx < 9; tx++) reached += seen[ty][tx];
+        CHECK(reached == 81);
+      }
     }
 
     /* edges: cursor never leaves the map, even moving with count 3 */

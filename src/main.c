@@ -89,6 +89,7 @@ static uint8_t title_screen(void) {
 static TileType construction_menu(TileType current) {
     uint8_t selection = current == TILE_EMPTY ? TILE_ROAD : current;
     Repeater rep = {NAV_NONE, 0};
+    render_snapshot_backdrop();
     wait_release();
     input_sync();
     for (;;) {
@@ -130,6 +131,7 @@ static TileType construction_menu(TileType current) {
 static void budget_menu(void) {
     uint8_t selection = 0;
     Repeater rep = {NAV_NONE, 0};
+    render_snapshot_backdrop();
     wait_release();
     input_sync();
     for (;;) {
@@ -159,6 +161,7 @@ static void budget_menu(void) {
 }
 
 static void stats_screen(void) {
+    render_snapshot_backdrop();
     wait_release();
     input_sync();
     for (;;) {
@@ -192,17 +195,32 @@ static void paint_here(const UiState *ui, bool bulldoze) {
     else city_build(ui->cursor_x, ui->cursor_y, ui->tool);
 }
 
-/* Moves along the grid. While painting, every cell passed over is painted, and
- * a cardinal step (two grid axes) is split so the painted trail stays
- * 4-connected: roads never end up touching only at corners. */
+/*
+ * Moves along the grid. A screen-direction (cardinal) arrow is worth two grid
+ * axes, but taking both at once would keep x+y constant and make half the tiles
+ * unreachable with single arrows. So a cardinal step takes ONE axis and
+ * alternates (x, then y, then x ...): two presses travel the full distance and
+ * every tile can be reached. If the chosen axis is blocked by the map edge the
+ * other one is tried, so movement never stalls. Each step moves one cell, so
+ * a painted trail is always 4-connected.
+ */
+static uint8_t cardinal_phase;
+
 static void move_cursor(UiState *ui, int8_t sx, int8_t sy, uint8_t count,
                         bool paint, bool bulldoze) {
     uint8_t idx = (uint8_t)((sy + 1) * 3 + (sx + 1));
     int8_t dx = map_dx[idx], dy = map_dy[idx];
     uint8_t i;
     for (i = 0; i < count; i++) {
-        if (dx && step_x(ui, dx) && paint) paint_here(ui, bulldoze);
-        if (dy && step_y(ui, dy) && paint) paint_here(ui, bulldoze);
+        bool moved;
+        if (dx && dy) {
+            if (cardinal_phase) moved = step_y(ui, dy) || step_x(ui, dx);
+            else                moved = step_x(ui, dx) || step_y(ui, dy);
+            cardinal_phase ^= 1;
+        } else {
+            moved = (dx && step_x(ui, dx)) || (dy && step_y(ui, dy));
+        }
+        if (moved && paint) paint_here(ui, bulldoze);
     }
 }
 

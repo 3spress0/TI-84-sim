@@ -166,7 +166,12 @@ static void sidebar_button(uint8_t index, const char *label, uint8_t color, bool
             gfx_FillTriangle(299, y + 5, 299, y + 14, 310, y + 9);
             break;
     }
-    text(C_WHITE, 293, y + 18, label);
+    {
+        int w = (int)gfx_GetStringWidth(label);
+        int lx = 288 + (32 - w) / 2;
+        if (lx < 288) lx = 288;
+        text(C_WHITE, lx, y + 18, label);
+    }
 }
 
 static void draw_sidebar(TileType selected, uint8_t speed) {
@@ -181,7 +186,7 @@ static void draw_sidebar(TileType selected, uint8_t speed) {
     sidebar_button(2, "UTIL", C_YELLOW, category == 2);
     sidebar_button(3, "SERV", C_CYAN, category == 3);
     sidebar_button(4, "TAX", C_TAN, false);
-    sidebar_button(5, speed ? "PLAY" : "PAUSE", C_GREEN, false);
+    sidebar_button(5, speed ? "PLAY" : "HOLD", C_GREEN, false);
     draw_minimap();
 }
 
@@ -341,6 +346,13 @@ static struct {
     Rect ov;
 } rc;
 
+/* Menus draw into the off-screen buffer, which holds the map without the HUD
+ * and may hold older screens outside it. Copy the visible game frame into it
+ * once when a menu opens so panels sit over the real gameplay view. */
+void render_snapshot_backdrop(void) {
+    gfx_BlitScreen();
+}
+
 void render_invalidate(void) {
     rc.valid = false;
     mini_valid = false;
@@ -401,6 +413,8 @@ void render_frame(const UiState *ui, uint16_t animation, const char *message) {
         cam_y = 92 - ((int)ui->cursor_x + (int)ui->cursor_y) * 4;
         full = true;
     }
+    sx = cam_x + ((int)ui->cursor_x - (int)ui->cursor_y) * 8;   /* recompute: camera may have moved */
+    sy = cam_y + ((int)ui->cursor_x + (int)ui->cursor_y) * 4;
 
     /* Changed tiles: redraw each one's footprint, or everything if too many. */
     if (!full && city_dirty_flag) {

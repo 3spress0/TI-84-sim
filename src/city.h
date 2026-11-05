@@ -8,7 +8,7 @@
 #define MAP_H 64
 #define MAP_TILES (MAP_W * MAP_H)
 #define SAVE_NAME "METROSAV"
-#define METROCE_VERSION "V1.2.0"
+#define METROCE_VERSION "V1.2.2"
 
 #define COVERAGE_PARK      0x01
 #define COVERAGE_POLICE    0x02

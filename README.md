@@ -1,4 +1,4 @@
-# MetroCE V1.2.0
+# MetroCE V1.2.2
 
 MetroCE is an original isometric city-building sandbox for the **TI-84 Plus CE / CE-T**, including the CE-T Python Edition. Its visual direction is inspired by classic isometric city simulators: diamond terrain, pixel-art towers, trees, roads, traffic, a construction sidebar, and a minimap.
 
@@ -17,7 +17,7 @@ New here? Read [TUTORIAL.md](TUTORIAL.md), or press `Mode` in the game for the b
 
 | Key | Action |
 |---|---|
-| Arrow keys | Move the cursor in the direction you press (screen-aligned) |
+| Arrow keys | Move the cursor in the direction you press (screen-aligned), one cell per step |
 | Two arrows at once | Diagonal = move along the map grid (use this for straight roads) |
 | Hold an arrow | Auto-repeat, then speeds up (1, 2, then 3 tiles per step) |
 | `2nd` | Build the selected item. Hold while moving to paint |
@@ -71,6 +71,14 @@ The generated sprites and convimg configuration are included, so Pillow is not r
 `tests/run.sh` compiles the input, area, undo and cursor-movement logic on your computer (needs `gcc`, not CEdev) against a stubbed keypad. It includes a brute-force check of the visible-tile culling against thousands of random camera positions. It does not run the calculator build.
 
 ## Changelog
+
+**V1.2.2** (menu backdrop)
+- Construction, Budget and City Data panels now draw over the current game view instead of leftover title-screen pixels.
+
+**V1.2.1** (hardware fixes, from photos on a TI-84 Plus CE-T)
+- **Every tile can now be selected.** A single arrow used to move two grid cells at once, which kept x+y constant and made half the map (a checkerboard) unreachable without two-arrow chords. A single arrow now moves one cell, alternating between the two grid axes, so two presses travel the old distance and any tile can be reached.
+- The cursor was drawn at its old position on frames where the camera re-centred, leaving stray yellow diamonds. Fixed.
+- Sidebar labels ran past the screen edge and wrapped onto the left edge of the next row. They are now centred inside the sidebar; the paused label is HOLD.
 
 **V1.2.0** (performance)
 - Based on CEmu profiling of V1.1.1: an empty-city frame took about 637 ms, nearly all of it drawing the map, which also throttled input.

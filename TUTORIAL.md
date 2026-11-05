@@ -89,10 +89,10 @@ Profiling in CEmu showed the old renderer spent about 600 ms per frame on the ma
 
 On an isometric map the grid axes run diagonally on screen. Arrows could mean either "screen direction" or "grid axis", and each is bad at something:
 
-- Screen-aligned arrows feel right for looking around, but a screen-horizontal step crosses two grid cells diagonally, so painting with it would make roads that only touch at corners (not connected).
+- Screen-aligned arrows feel right for looking around, but a screen-horizontal move crosses the grid diagonally. Done as one two-axis step it skips every other tile, and painting with it makes roads that touch only at corners.
 - Grid-axis arrows paint clean roads but feel rotated 45 degrees (the old behaviour: Up moved up-right).
 
-MetroCE uses both: **single arrow = screen direction, two arrows = grid axis** (the arrow pad is a disc, so pressing two neighbours with one thumb is natural). `map_dx / map_dy` in `main.c` is the lookup table. While painting, a screen-direction step is split into its two grid steps, so every cell painted is edge-connected to the last (`move_cursor`).
+MetroCE uses both: **single arrow = screen direction, two arrows = grid axis** (the arrow pad is a disc, so pressing two neighbours with one thumb is natural). `map_dx / map_dy` in `main.c` is the lookup table. A screen-direction step moves ONE cell, alternating between the two grid axes (x, y, x, ...). Taking both axes at once would keep x+y constant and leave half the tiles unreachable with single arrows. Because every step is one cell, a painted trail is always edge-connected (`move_cursor`).
 
 Timing, in `input_arrows()`:
 
