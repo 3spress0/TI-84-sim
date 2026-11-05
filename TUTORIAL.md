@@ -71,15 +71,19 @@ if sim timer due: city_simulate()
 render_frame()                   draws and swaps buffers
 ```
 
-There is no fixed `delay()` any more. `gfx_SwapDraw()` waits for the screen, so the frame rate is whatever the drawing costs, and **nothing depends on it**: key repeat and simulation use `clock()` (32768 ticks per second, `MS(n)` converts milliseconds).
+There is no fixed `delay()`. When nothing changed, `render_frame()` returns immediately, so the loop spins fast and `input_scan()` runs often; key repeat and the simulation use `clock()` (32768 ticks per second, `MS(n)` converts milliseconds), never frame counts.
 
-### Isometric drawing (`render.c`)
+### Drawing (`render.c`, `visible.c`)
 
-A tile at map `(x, y)` goes to screen
-`sx = cam_x + (x - y) * 8`, `sy = cam_y + (x + y) * 4`
-(tiles are 16×8 pixels). The camera is set so the cursor is always at the screen centre, so the map scrolls instead of the cursor moving.
+A tile at map `(x, y)` goes to screen `sx = cam_x + (x - y) * 8`, `sy = cam_y + (x + y) * 4` (tiles are 16x8 pixels). Tiles are drawn in order of `x + y` (far to near, the *painter's algorithm*) so a tall building is covered correctly by the tile in front of it.
 
-Tiles are drawn in order of `x + y` (far to near, the *painter's algorithm*), so a tall building is correctly covered by the tile in front of it. Anything off screen is skipped before drawing.
+Profiling in CEmu showed the old renderer spent about 600 ms per frame on the map, so drawing is built around not drawing:
+
+- **World buffer.** The map lives in the off-screen buffer. `gfx_BlitRectangle` copies only changed rectangles to the visible screen. The cursor, area preview, HUD and messages are drawn directly on the screen; to erase them the matching rectangle is copied back from the world buffer.
+- **Dirty tiles.** `city.c` sets a bit for every tile that changes (build, bulldoze, undo, growth) and also its four neighbours when roads could change shape. The renderer redraws each changed tile's footprint, or everything if more than `MAX_DIRTY_RECTS` visible tiles changed.
+- **Culling (`visible_tiles`).** Only diagonals and columns that can touch the rectangle are visited. The tests compare it against a brute-force check.
+- **Camera.** It only moves when the cursor gets within 24 px of the view edge, then it recentres (one full redraw). Cursor moves in between cost almost nothing.
+- **Other.** RLET sprites, a minimap sprite rebuilt only when `city_revision` changes, and frames skipped when the UI state, HUD values and tiles are all unchanged.
 
 ### Why the arrows work the way they do (`input.c`, `main.c`)
 
@@ -95,7 +99,8 @@ Timing, in `input_arrows()`:
 1. **First press waits one scan.** Otherwise pressing Right+Down slightly apart reads as Right, then Right+Down, and you get a stray step. A tap released before the scan still counts as a tap.
 2. **Hold:** after `ARROW_REPEAT_DELAY` it repeats every `ARROW_REPEAT_RATE`.
 3. **Acceleration:** after 1 s it takes 2 tiles per repeat, after 2 s it takes 3. Not while painting, so strokes stay precise.
-4. **Rolling to another direction** steps immediately and uses a shorter delay.
+4. **Slow frames owe steps.** After a long frame (a full redraw) the repeat applies up to 3 steps, so holding a key scrolls at a steady speed. Not while painting.
+5. **Rolling to another direction** steps immediately and uses a shorter delay.
 
 `input_pressed()` is edge detection: a bit is "pressed" if it is set now and was clear at the previous scan. That is what makes `Zoom` save once instead of once per frame.
 
@@ -114,6 +119,7 @@ It is one level deep. The buffers live outside the `City` struct, so old saves s
 | What | Where |
 |---|---|
 | Key repeat delay, rate, acceleration | top of `input.h` |
+| Camera margin, dirty-rect limit | `CAM_MARGIN_X/Y`, `MAX_DIRTY_RECTS` in `render.c` |
 | Simulation speed (ms per tick at speeds 1, 2, 3) | `sim_ms` in `main.c` |
 | Message and exit-confirm durations | `MESSAGE_MS`, `EXIT_CONFIRM_MS` in `main.c` |
 | Balance (growth, demand, happiness) | `city_simulate()` in `city.c` |
@@ -132,6 +138,7 @@ I looked for existing TI-84 Plus CE games to copy controls from. Honest result:
 
 ### Known limits
 
-- **Not run on a calculator or emulator.** It compiles with no warnings (CEdev v15.0), and the logic is unit-tested on a PC, but I had no ROM to run it. The repeat timings, simulation speeds and exact text positions are untested guesses. Layout text uses measured string widths where it matters, but check every screen once.
+- **Not run by me.** It compiles with no warnings (CEdev v15.0) and the logic is unit-tested on a PC, but I had no ROM. An emulator pass on V1.1.1 found the layout issue (fixed) and profiled the renderer; V1.2.0's speed-up is unmeasured. The repeat timings, simulation speeds and exact text positions are untested guesses. Layout text uses measured string widths where it matters, but check every screen once.
 - Pressing Up/Down/Left/Right together with `2nd` and `Alpha` relies on the calculator keypad not "ghosting" key combinations. By the key matrix layout it should be fine, but that is also untested.
+- Traffic dots only move when tiles are redrawn. Scrolling, menu exit and large simulation changes still cost a full redraw (expected a few hundred ms).
 - Undo is one level. Congestion does nothing. There is no money system.

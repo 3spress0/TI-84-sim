@@ -105,8 +105,13 @@ bool input_arrows(uint32_t now, bool precise, int8_t *sx, int8_t *sy, uint8_t *c
     if (time_due(now, arrow.t_next)) {      /* auto-repeat */
         uint32_t held = now - arrow.t_start;
         if (!precise) {
+            /* A slow frame (a full redraw) owes the steps that were skipped; bounded
+             * so releasing the key during a hitch cannot overshoot far. */
+            uint32_t owed = (now - arrow.t_next) / ARROW_REPEAT_RATE;
+            uint8_t catch_up = (uint8_t)(1 + (owed > 2 ? 2 : owed));
             if (held >= ARROW_ACCEL3) *count = 3;
             else if (held >= ARROW_ACCEL2) *count = 2;
+            if (catch_up > *count) *count = catch_up;
         }
         arrow.t_next = now + ARROW_REPEAT_RATE;
         *sx = x;

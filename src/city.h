@@ -8,7 +8,7 @@
 #define MAP_H 64
 #define MAP_TILES (MAP_W * MAP_H)
 #define SAVE_NAME "METROSAV"
-#define METROCE_VERSION "V1.1.1"
+#define METROCE_VERSION "V1.2.0"
 
 #define COVERAGE_PARK      0x01
 #define COVERAGE_POLICE    0x02
@@ -92,6 +92,12 @@ uint16_t city_apply_shape(uint8_t ax, uint8_t ay, uint8_t bx, uint8_t by,
  * nothing never overwrites your previous undo. Only tiles touched by the
  * stroke are restored, so growth elsewhere is left alone.
  * city_undo_toggle(): 0 = nothing to undo, 1 = undone, 2 = redone. */
+/* Renderer bookkeeping: one bit per tile changed since the renderer last looked,
+ * and a counter that increases on every change (the minimap cache keys on it). */
+extern uint8_t city_dirty[MAP_TILES / 8];
+extern bool city_dirty_flag;
+extern uint16_t city_revision;
+
 void city_undo_begin(void);
 uint8_t city_undo_toggle(void);
 bool city_save(void);

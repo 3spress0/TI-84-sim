@@ -19,6 +19,7 @@ converts:
   - name: sprites
     palette: global_palette
     transparent-color-index: 0
+    style: rlet
     images:
       - com1_0.png
       - com1_1.png

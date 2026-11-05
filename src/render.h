@@ -23,6 +23,8 @@ typedef struct {
 
 void render_init(void);
 void render_end(void);
+/* Call after anything else has drawn over the screen (menus, help). */
+void render_invalidate(void);
 void render_frame(const UiState *ui, uint16_t animation, const char *message);
 void render_title(uint8_t selection, bool has_save);
 void render_tool_menu(uint8_t selection);

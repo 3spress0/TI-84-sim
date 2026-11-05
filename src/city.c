@@ -21,6 +21,9 @@ static bool undo_pending;   /* stroke started, snapshot not taken yet        */
 static bool undo_open;      /* a snapshot exists and the mask is being filled */
 static bool undo_undone;    /* currently showing the "before" state           */
 
+static void mark_dirty(uint16_t i);
+static void mark_dirty_around(uint16_t i);
+
 static void undo_reset(void) {
     undo_pending = false;
     undo_open = false;
@@ -51,6 +54,7 @@ uint8_t city_undo_toggle(void) {
             Tile t = city.tiles[i];
             city.tiles[i] = undo_tiles[i];
             undo_tiles[i] = t;
+            mark_dirty_around(i);
         }
     }
     undo_pending = false;
@@ -157,6 +161,27 @@ void city_new(void) {
     city_simulate();
 }
 
+/* ---- dirty tracking so the renderer only redraws what changed ---- */
+uint8_t city_dirty[MAP_TILES / 8];
+bool city_dirty_flag;
+uint16_t city_revision;
+
+static void mark_dirty(uint16_t i) {
+    city_dirty[i >> 3] |= (uint8_t)(1u << (i & 7));
+    city_dirty_flag = true;
+    city_revision++;
+}
+
+/* The tile and its four neighbours: road sprites depend on adjacent roads. */
+static void mark_dirty_around(uint16_t i) {
+    uint8_t x = (uint8_t)(i % MAP_W), y = (uint8_t)(i / MAP_W);
+    mark_dirty(i);
+    if (x > 0) mark_dirty(i - 1);
+    if (x < MAP_W - 1) mark_dirty(i + 1);
+    if (y > 0) mark_dirty(i - MAP_W);
+    if (y < MAP_H - 1) mark_dirty(i + MAP_W);
+}
+
 bool city_build(uint8_t x, uint8_t y, TileType type) {
     Tile *tile = &city.tiles[index_of(x, y)];
     if (type <= TILE_EMPTY || type >= TILE_COUNT || tile->type != TILE_EMPTY) return false;
@@ -164,6 +189,7 @@ bool city_build(uint8_t x, uint8_t y, TileType type) {
     tile->type = (uint8_t)type;
     tile->level = is_zone(type) ? 0 : 1;
     tile->age = 0;
+    mark_dirty_around(index_of(x, y));
     return true;
 }
 
@@ -174,6 +200,7 @@ bool city_bulldoze(uint8_t x, uint8_t y) {
     memset(tile, 0, sizeof(*tile));
     tile->variation = (uint8_t)rand();
     traffic[index_of(x, y)] = 0;
+    mark_dirty_around(index_of(x, y));
     return true;
 }
 
@@ -322,17 +349,20 @@ void city_simulate(void) {
                     stats.sewage_pct >= 60 && rand() % 100 < demand / 5) {
                     tile->level = 1;
                     tile->age = 0;
+                    mark_dirty(index_of(x, y));
                 }
             } else if (stats.powered_pct < 35 || stats.watered_pct < 35 || !city_road_access(x, y)) {
                 if (rand() % 100 < 18) {
                     tile->level--;
                     tile->age = 0;
+                    mark_dirty(index_of(x, y));
                 }
             } else if (tile->level < MAX_LEVEL && tile->age > 5 && demand > 45) {
                 chance = demand / 18 + (stats.happiness > 75 ? 2 : 0);
                 if (rand() % 100 < chance) {
                     tile->level++;
                     tile->age = 0;
+                    mark_dirty(index_of(x, y));
                 }
             }
         }

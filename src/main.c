@@ -318,9 +318,11 @@ int main(void) {
         } else if (input_pressed(kb_KeyYequ)) {
             ui.tool = construction_menu(ui.tool);
             input_sync();
+            render_invalidate();
         } else if (input_pressed(kb_KeyWindow)) {
             budget_menu();
             input_sync();
+            render_invalidate();
         } else if (input_pressed(kb_KeyZoom)) {
             message = city_save() ? "CITY SAVED TO METROSAV" : "SAVE FAILED - CHECK AVAILABLE RAM";
             message_until = now + MS(MESSAGE_MS);
@@ -338,8 +340,11 @@ int main(void) {
             last_sim = now;
         } else if (input_pressed(kb_KeyEnter)) {
             stats_screen();
+            input_sync();
+            render_invalidate();
         } else if (input_pressed(kb_KeyMode)) {
             help_screen(0);
+            render_invalidate();
         } else if (input_pressed(kb_KeyClear)) {
             if (ui.area_active) {
                 ui.area_active = false;
@@ -365,7 +370,8 @@ int main(void) {
             last_sim = now;
         }
 
-        render_frame(&ui, (uint16_t)(now >> 11), message);
+        /* Traffic dots only move when tiles are redrawn, so key them to the sim clock. */
+        render_frame(&ui, (uint16_t)(city.ticks << 2), message);
     }
 
     render_end();

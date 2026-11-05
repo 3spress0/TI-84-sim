@@ -3,6 +3,7 @@
 #define main metroce_main
 #include "../src/main.c"
 #include "../src/area.h"
+#include "../src/visible.h"
 #undef main
 
 #include <assert.h>
@@ -15,6 +16,7 @@ void delay(uint16_t ms) { (void)ms; }
 
 /* render.h stubs so main.c links */
 void render_init(void) {}
+void render_invalidate(void) {}
 void render_end(void) {}
 void render_frame(const UiState *u, uint16_t a, const char *m) { (void)u; (void)a; (void)m; }
 void render_title(uint8_t s, bool h) { (void)s; (void)h; }
@@ -66,10 +68,19 @@ static int test_input(void) {
     CHECK(!step(t0 + MS(229), false, &sx, &sy, &n));
     CHECK(step(t0 + MS(231), false, &sx, &sy, &n)); CHECK(n == 1);
     CHECK(!step(t0 + MS(260), false, &sx, &sy, &n));            /* rate-limited */
-    CHECK(step(t0 + MS(280), false, &sx, &sy, &n));
-    CHECK(step(t0 + MS(1100), false, &sx, &sy, &n)); CHECK(n == 2);   /* accel tier 2 */
-    CHECK(step(t0 + MS(2100), false, &sx, &sy, &n)); CHECK(n == 3);   /* accel tier 3 */
-    CHECK(step(t0 + MS(2200), true,  &sx, &sy, &n)); CHECK(n == 1);   /* painting: no accel */
+    { uint32_t tt; int last_n = 0, ok = 1;
+      for (tt = t0 + MS(276); tt <= t0 + MS(1100); tt += MS(45)) {      /* a steady frame rate */
+          if (!step(tt, false, &sx, &sy, &n)) ok = 0; else last_n = n;
+      }
+      CHECK(ok); CHECK(last_n == 2);                                    /* accel tier 2 after 1 s */
+      for (; tt <= t0 + MS(2100); tt += MS(45)) { if (step(tt, false, &sx, &sy, &n)) last_n = n; }
+      CHECK(last_n == 3);                                               /* tier 3 after 2 s */
+      CHECK(step(tt, true, &sx, &sy, &n)); CHECK(n == 1);               /* painting: no accel */
+      tt += MS(300);                                                    /* one slow frame (a redraw) */
+      CHECK(step(tt, true, &sx, &sy, &n)); CHECK(n == 1);               /* painting: no catch-up */
+      tt += MS(300);
+      CHECK(step(tt, false, &sx, &sy, &n)); CHECK(n == 3);             /* navigating: bounded catch-up */
+    }
 
     /* two-arrow chord pressed a scan apart resolves to ONE diagonal step */
     keys(0, 0, 0); input_init();
@@ -168,6 +179,26 @@ static int test_city(void) {
     CHECK(city.tiles[6 * MAP_W + 6].type == TILE_EMPTY);
     CHECK(city.tiles[10 * MAP_W + 10].type == TILE_COMMERCIAL && city.tiles[10 * MAP_W + 10].level == 2);
 
+    /* dirty tracking: a road marks itself and its four neighbours; revision advances */
+    city_new();
+    memset(city_dirty, 0, sizeof(city_dirty)); city_dirty_flag = false;
+    { uint16_t rev = city_revision;
+      #define DIRTY(x, y) ((city_dirty[((y) * MAP_W + (x)) >> 3] >> (((y) * MAP_W + (x)) & 7)) & 1)
+      city_undo_begin();
+      CHECK(city_build(20, 20, TILE_ROAD));
+      CHECK(city_dirty_flag && city_revision != rev);
+      CHECK(DIRTY(20, 20) && DIRTY(19, 20) && DIRTY(21, 20) && DIRTY(20, 19) && DIRTY(20, 21));
+      CHECK(!DIRTY(21, 21) && !DIRTY(30, 30));
+      memset(city_dirty, 0, sizeof(city_dirty)); city_dirty_flag = false;
+      CHECK(city_bulldoze(20, 20));
+      CHECK(city_dirty_flag && DIRTY(20, 20) && DIRTY(20, 21));
+      memset(city_dirty, 0, sizeof(city_dirty)); city_dirty_flag = false;
+      CHECK(!city_build(0, 0, TILE_EMPTY));                              /* failed build: nothing dirty */
+      CHECK(!city_dirty_flag);
+      CHECK(city_undo_toggle() == 1);                                    /* undo marks too */
+      CHECK(city_dirty_flag);
+    }
+
     /* shapes */
     city_new();
     city_undo_begin();
@@ -250,7 +281,46 @@ static int test_move(void) {
     return 0;
 }
 
+typedef struct { int n; int s[5000], x[5000]; uint8_t seen[64][64]; } Visit;
+static void visit_cb(uint8_t x, uint8_t y, int sx, int sy, void *c) {
+    Visit *v = (Visit *)c;
+    v->s[v->n] = x + y; v->x[v->n] = x; v->n++;
+    v->seen[y][x]++;
+    (void)sx; (void)sy;
+}
+
+static int test_visible(void) {
+    static Visit v;
+    unsigned seed = 12345;
+    int trial;
+    for (trial = 0; trial < 3000; trial++) {
+        int cam_x, cam_y, x0, y0, x1, y1, x, y, i;
+        seed = seed * 1103515245u + 12345u;
+        cam_x = (int)((seed >> 8) % 1400) - 700;
+        seed = seed * 1103515245u + 12345u;
+        cam_y = (int)((seed >> 8) % 700) - 400;
+        seed = seed * 1103515245u + 12345u;
+        x0 = (int)((seed >> 8) % 280); y0 = (int)((seed >> 4) % 220);
+        seed = seed * 1103515245u + 12345u;
+        x1 = x0 + 1 + (int)((seed >> 8) % (320 - x0)); y1 = y0 + 1 + (int)((seed >> 4) % (224 - y0));
+        memset(&v, 0, sizeof(v));
+        visible_tiles(cam_x, cam_y, x0, y0, x1, y1, visit_cb, &v);
+        for (i = 1; i < v.n; i++)                                       /* painter's order */
+            CHECK(v.s[i] > v.s[i - 1] || (v.s[i] == v.s[i - 1] && v.x[i] > v.x[i - 1]));
+        for (y = 0; y < 64; y++) for (x = 0; x < 64; x++) {
+            int sx = cam_x + (x - y) * 8, sy = cam_y + (x + y) * 4;
+            int bx0 = sx, bx1 = sx + 16, by0 = sy + 8 - MAX_SPRITE_H, by1 = sy + 8;
+            int touches = bx1 > x0 && bx0 < x1 && by1 > y0 && by0 < y1;
+            CHECK(v.seen[y][x] <= 1);                                   /* never twice */
+            if (touches) CHECK(v.seen[y][x] == 1);                      /* never skipped */
+        }
+        CHECK(v.n < 1200);                                              /* and it really culls */
+    }
+    return 0;
+}
+
 int main(void) {
+    if (test_visible()) return 1;
     if (test_input()) return 1;
     if (test_area())  return 1;
     if (test_city())  return 1;
