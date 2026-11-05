@@ -6,12 +6,26 @@ MetroCE is an original isometric city-building sandbox for the **TI-84 Plus CE /
 
 New here? Read [TUTORIAL.md](TUTORIAL.md), or press `Mode` in the game for the built-in help and tutorial.
 
+![A densely developed isometric city in MetroCE](preview.png)
+
+*A densely developed MetroCE city, rendered with the game's original pixel-art assets.*
+
 ## Play
 
 1. Build `METROCE.8xp` or use the prebuilt file in `bin/`.
 2. Transfer it to the calculator with TI Connect CE or another compatible link program.
 3. On an Artifice-enabled CE-T, open the program menu and run `METROCE` (use the `Asm(` token if the calculator inserts it).
 4. Start a new city or continue the saved `METROSAV` AppVar.
+
+## Screenshots
+
+These V1.1.0 screenshots were captured from the original program running natively in CEmu.
+
+| Main menu | Saved city loaded with **Continue** |
+|:---:|:---:|
+| ![MetroCE main menu](docs/screenshots/main-menu.png) | ![An isometric MetroCE city after loading a save](docs/screenshots/loaded-city.png) |
+| **Taxes and service funding** | **Built-in controls help** |
+| ![The city budget panel](docs/screenshots/budget.png) | ![The first page of the built-in controls help](docs/screenshots/help-controls.png) |
 
 ## Controls
 
