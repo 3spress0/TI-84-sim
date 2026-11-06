@@ -1,32 +1,54 @@
 #include "render.h"
 #include "area.h"
 #include "util.h"
+#include "traffic.h"
 #include "visible.h"
 #include "gfx/gfx.h"
 
 #include <graphx.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 /* Fixed entries in the generated global palette. */
 enum { C_CLEAR, C_WHITE, C_NAVY, C_BLUE, C_GRAY, C_DARK, C_GREEN,
        C_YELLOW, C_RED, C_CYAN, C_BLACK, C_TAN };
 
-static gfx_rletsprite_t *roads[16] = {
-    road0, road1, road2, road3, road4, road5, road6, road7,
-    road8, road9, road10, road11, road12, road13, road14, road15
+/* Zoom: 0 = 16x8 tiles, 1 = 32x16 tiles (sprites prefixed z2_). */
+static uint8_t zs = 1;
+#define Z(n) (zs ? z2_##n : n)
+#define HW (8 << zs)        /* half tile width  */
+#define HH (4 << zs)        /* half tile height */
+#define TW (16 << zs)
+#define TH (8 << zs)
+#define MAXH (MAX_SPRITE_H << zs)
+
+static gfx_rletsprite_t *roads[2][16] = {
+    {road0, road1, road2, road3, road4, road5, road6, road7,
+     road8, road9, road10, road11, road12, road13, road14, road15},
+    {z2_road0, z2_road1, z2_road2, z2_road3, z2_road4, z2_road5, z2_road6, z2_road7,
+     z2_road8, z2_road9, z2_road10, z2_road11, z2_road12, z2_road13, z2_road14, z2_road15}
 };
-static gfx_rletsprite_t *grasses[4] = { grass0, grass1, grass2, grass3 };
-static gfx_rletsprite_t *trees[3] = { tree0, tree1, tree2 };
-static gfx_rletsprite_t *residential[3][2] = {
-    {res1_0, res1_1}, {res2_0, res2_1}, {res3_0, res3_1}
+static gfx_rletsprite_t *grasses[2][4] = {
+    {grass0, grass1, grass2, grass3}, {z2_grass0, z2_grass1, z2_grass2, z2_grass3}
 };
-static gfx_rletsprite_t *commercial[3][2] = {
-    {com1_0, com1_1}, {com2_0, com2_1}, {com3_0, com3_1}
+static gfx_rletsprite_t *trees[2][3] = {
+    {tree0, tree1, tree2}, {z2_tree0, z2_tree1, z2_tree2}
 };
-static gfx_rletsprite_t *industrial[3][2] = {
-    {ind1_0, ind1_1}, {ind2_0, ind2_1}, {ind3_0, ind3_1}
+static gfx_rletsprite_t *residential[2][3][2] = {
+    {{res1_0, res1_1}, {res2_0, res2_1}, {res3_0, res3_1}},
+    {{z2_res1_0, z2_res1_1}, {z2_res2_0, z2_res2_1}, {z2_res3_0, z2_res3_1}}
 };
+static gfx_rletsprite_t *commercial[2][3][2] = {
+    {{com1_0, com1_1}, {com2_0, com2_1}, {com3_0, com3_1}},
+    {{z2_com1_0, z2_com1_1}, {z2_com2_0, z2_com2_1}, {z2_com3_0, z2_com3_1}}
+};
+static gfx_rletsprite_t *industrial[2][3][2] = {
+    {{ind1_0, ind1_1}, {ind2_0, ind2_1}, {ind3_0, ind3_1}},
+    {{z2_ind1_0, z2_ind1_1}, {z2_ind2_0, z2_ind2_1}, {z2_ind3_0, z2_ind3_1}}
+};
+
+uint8_t render_zoom(void) { return zs; }
 
 static uint16_t map_index(uint8_t x, uint8_t y) {
     return (uint16_t)y * MAP_W + x;
@@ -39,7 +61,7 @@ static void text(uint8_t color, int x, int y, const char *string) {
 }
 
 static void sprite_at_bottom(gfx_rletsprite_t *sprite, int x, int base_y) {
-    gfx_RLETSprite(sprite, x, base_y + TILE_H - sprite->height);
+    gfx_RLETSprite(sprite, x, base_y + TH - sprite->height);
 }
 
 static uint8_t road_mask(uint8_t x, uint8_t y) {
@@ -58,38 +80,35 @@ static void draw_tile(uint8_t x, uint8_t y, int sx, int sy, uint16_t animation) 
     gfx_rletsprite_t *sprite = NULL;
 
     if (tile->type == TILE_ROAD) {
-        gfx_RLETSprite(roads[road_mask(x, y)], sx, sy);
-        if (traffic[i] > 18 && ((x * 7 + y * 11 + (animation >> 3)) & 7) < 2) {
-            gfx_SetColor((x + y) & 1 ? C_YELLOW : C_WHITE);
-            gfx_FillRectangle(sx + 6 + ((animation >> 2) & 3), sy + 3, 2, 1);
-        }
+        gfx_RLETSprite(roads[zs][road_mask(x, y)], sx, sy);
+        (void)animation;
         return;
     }
 
-    gfx_RLETSprite(grasses[tile->variation & 3], sx, sy);
+    gfx_RLETSprite(grasses[zs][tile->variation & 3], sx, sy);
     switch (tile->type) {
         case TILE_EMPTY:
-            if (tile->variation % 9 < 2) sprite = trees[tile->variation % 3];
+            if (tile->variation % 9 < 2) sprite = trees[zs][tile->variation % 3];
             break;
         case TILE_RESIDENTIAL:
-            if (!tile->level) sprite = zone_res;
-            else sprite = residential[tile->level - 1][variant];
+            if (!tile->level) sprite = Z(zone_res);
+            else sprite = residential[zs][tile->level - 1][variant];
             break;
         case TILE_COMMERCIAL:
-            if (!tile->level) sprite = zone_com;
-            else sprite = commercial[tile->level - 1][variant];
+            if (!tile->level) sprite = Z(zone_com);
+            else sprite = commercial[zs][tile->level - 1][variant];
             break;
         case TILE_INDUSTRIAL:
-            if (!tile->level) sprite = zone_ind;
-            else sprite = industrial[tile->level - 1][variant];
+            if (!tile->level) sprite = Z(zone_ind);
+            else sprite = industrial[zs][tile->level - 1][variant];
             break;
-        case TILE_POWER: sprite = power; break;
-        case TILE_WATER: sprite = water; break;
-        case TILE_SEWAGE: sprite = sewage; break;
-        case TILE_PARK: sprite = park; break;
-        case TILE_POLICE: sprite = police; break;
-        case TILE_FIRE: sprite = fire; break;
-        case TILE_SCHOOL: sprite = school; break;
+        case TILE_POWER: sprite = Z(power); break;
+        case TILE_WATER: sprite = Z(water); break;
+        case TILE_SEWAGE: sprite = Z(sewage); break;
+        case TILE_PARK: sprite = Z(park); break;
+        case TILE_POLICE: sprite = Z(police); break;
+        case TILE_FIRE: sprite = Z(fire); break;
+        case TILE_SCHOOL: sprite = Z(school); break;
         default: break;
     }
     if (sprite) sprite_at_bottom(sprite, sx, sy);
@@ -193,25 +212,25 @@ static void draw_sidebar(TileType selected, uint8_t speed) {
 static int cam_x, cam_y;   /* set each frame, used by the overlay helpers */
 
 static void diamond(int sx, int sy) {
-    gfx_Line(sx + 8, sy, sx + 15, sy + 3);
-    gfx_Line(sx + 15, sy + 3, sx + 8, sy + 7);
-    gfx_Line(sx + 8, sy + 7, sx, sy + 3);
-    gfx_Line(sx, sy + 3, sx + 8, sy);
+    gfx_Line(sx + HW, sy, sx + TW - 1, sy + HH - 1);
+    gfx_Line(sx + TW - 1, sy + HH - 1, sx + HW, sy + TH - 1);
+    gfx_Line(sx + HW, sy + TH - 1, sx, sy + HH - 1);
+    gfx_Line(sx, sy + HH - 1, sx + HW, sy);
 }
 
 static void cell_outline(uint8_t x, uint8_t y, void *ctx) {
     (void)ctx;
-    diamond(cam_x + ((int)x - (int)y) * 8, cam_y + ((int)x + (int)y) * 4);
+    diamond(cam_x + ((int)x - (int)y) * HW, cam_y + ((int)x + (int)y) * HH);
 }
 
 /* Outer iso outline of the box between two corners. */
 static void box_outline(uint8_t ax, uint8_t ay, uint8_t bx, uint8_t by) {
     int x0 = ax < bx ? ax : bx, x1 = ax < bx ? bx : ax;
     int y0 = ay < by ? ay : by, y1 = ay < by ? by : ay;
-    int tx = cam_x + (x0 - y0) * 8 + 8,  ty = cam_y + (x0 + y0) * 4;
-    int rx = cam_x + (x1 - y0) * 8 + 15, ry = cam_y + (x1 + y0) * 4 + 3;
-    int bxp = cam_x + (x1 - y1) * 8 + 8, byp = cam_y + (x1 + y1) * 4 + 7;
-    int lx = cam_x + (x0 - y1) * 8,      ly = cam_y + (x0 + y1) * 4 + 3;
+    int tx = cam_x + (x0 - y0) * HW + HW,       ty = cam_y + (x0 + y0) * HH;
+    int rx = cam_x + (x1 - y0) * HW + TW - 1,   ry = cam_y + (x1 + y0) * HH + HH - 1;
+    int bxp = cam_x + (x1 - y1) * HW + HW,      byp = cam_y + (x1 + y1) * HH + TH - 1;
+    int lx = cam_x + (x0 - y1) * HW,            ly = cam_y + (x0 + y1) * HH + HH - 1;
     gfx_Line(tx, ty, rx, ry);
     gfx_Line(rx, ry, bxp, byp);
     gfx_Line(bxp, byp, lx, ly);
@@ -344,6 +363,7 @@ static struct {
     char last_msg[32];
     bool ov_drawn;
     Rect ov;
+    uint32_t next_car_frame;
 } rc;
 
 /* Menus draw into the off-screen buffer, which holds the map without the HUD
@@ -351,6 +371,11 @@ static struct {
  * once when a menu opens so panels sit over the real gameplay view. */
 void render_snapshot_backdrop(void) {
     gfx_BlitScreen();
+}
+
+void render_set_zoom(uint8_t z) {
+    zs = z ? 1 : 0;
+    rc.valid = false;
 }
 
 void render_invalidate(void) {
@@ -376,21 +401,21 @@ static void draw_world(int x0, int y0, int x1, int y1, uint16_t animation) {
     gfx_SetClipRegion(x0, y0, x1, y1);
     gfx_SetColor(C_NAVY);
     gfx_FillRectangle(x0, y0, x1 - x0, y1 - y0);
-    visible_tiles(cam_x, cam_y, x0, y0, x1, y1, draw_tile_cb, &animation);
+    visible_tiles(zs, cam_x, cam_y, x0, y0, x1, y1, draw_tile_cb, &animation);
 }
 
 /* Bounding box of the cursor and (if active) the area preview, in screen px. */
 static void overlay_bounds(const UiState *ui, Rect *r) {
     int cx = ui->cursor_x, cy = ui->cursor_y;
-    r->x0 = cam_x + (cx - cy) * 8;
-    r->y0 = cam_y + (cx + cy) * 4;
-    r->x1 = r->x0 + TILE_W;
-    r->y1 = r->y0 + TILE_H;
+    r->x0 = cam_x + (cx - cy) * HW;
+    r->y0 = cam_y + (cx + cy) * HH;
+    r->x1 = r->x0 + TW;
+    r->y1 = r->y0 + TH;
     if (ui->area_active) {
         int ax0 = ui->area_x < cx ? ui->area_x : cx, ax1 = ui->area_x < cx ? cx : ui->area_x;
         int ay0 = ui->area_y < cy ? ui->area_y : cy, ay1 = ui->area_y < cy ? cy : ui->area_y;
-        int lx = cam_x + (ax0 - ay1) * 8, rx = cam_x + (ax1 - ay0) * 8 + TILE_W;
-        int ty = cam_y + (ax0 + ay0) * 4, by = cam_y + (ax1 + ay1) * 4 + TILE_H;
+        int lx = cam_x + (ax0 - ay1) * HW, rx = cam_x + (ax1 - ay0) * HW + TW;
+        int ty = cam_y + (ax0 + ay0) * HH, by = cam_y + (ax1 + ay1) * HH + TH;
         if (lx < r->x0) r->x0 = lx;
         if (rx > r->x1) r->x1 = rx;
         if (ty < r->y0) r->y0 = ty;
@@ -398,23 +423,68 @@ static void overlay_bounds(const UiState *ui, Rect *r) {
     }
 }
 
+/* ---- cars: small rectangles on the screen layer, erased from the world buffer ---- */
+#define CAR_FRAME_TICKS (32768UL * 40 / 1000)     /* at most 25 car frames per second */
+
+static Rect car_rect[MAX_CARS];
+static uint8_t car_rect_n;
+static const uint8_t car_colors[4] = {C_RED, C_WHITE, C_YELLOW, C_CYAN};
+
+static bool rect_hits(const Rect *a, int x0, int y0, int x1, int y1) {
+    return a->x0 < x1 && a->x1 > x0 && a->y0 < y1 && a->y1 > y0;
+}
+
+static void erase_cars(void) {
+    uint8_t k;
+    for (k = 0; k < car_rect_n; k++)
+        blit_world(car_rect[k].x0, car_rect[k].y0, car_rect[k].x1, car_rect[k].y1);
+    car_rect_n = 0;
+}
+
+static void draw_cars(void) {
+    const Car *cars = traffic_cars();
+    int cw = zs ? 6 : 3, ch = zs ? 3 : 2;
+    uint8_t i;
+    gfx_SetClipRegion(0, 0, VIEW_W, VIEW_H);
+    for (i = 0; i < MAX_CARS; i++) {
+        const Car *c = &cars[i];
+        int ax, ay, bx, by, px, py;
+        if (!c->active) continue;
+        ax = cam_x + ((int)c->x - (int)c->y) * HW + HW;          /* centre of the tile it leaves */
+        ay = cam_y + ((int)c->x + (int)c->y) * HH + HH - 1;
+        bx = ax + ((int)c->dx - (int)c->dy) * HW;                 /* centre of the next tile */
+        by = ay + ((int)c->dx + (int)c->dy) * HH;
+        px = ax + (bx - ax) * (int)c->t / 255 - cw / 2;
+        py = ay + (by - ay) * (int)c->t / 255 - ch / 2;
+        if (px < 0 || py < 0 || px + cw > VIEW_W || py + ch > VIEW_H) continue;
+        gfx_SetColor(car_colors[c->color & 3]);
+        gfx_FillRectangle(px, py, cw, ch);
+        car_rect[car_rect_n].x0 = px;
+        car_rect[car_rect_n].y0 = py;
+        car_rect[car_rect_n].x1 = px + cw;
+        car_rect[car_rect_n].y1 = py + ch;
+        car_rect_n++;
+    }
+    gfx_SetClipRegion(0, 0, 320, 240);
+}
+
 void render_frame(const UiState *ui, uint16_t animation, const char *message) {
     bool full = !rc.valid, world_changed = false;
     Rect rects[MAX_DIRTY_RECTS];
     uint8_t n_rects = 0;
-    int sx = cam_x + ((int)ui->cursor_x - (int)ui->cursor_y) * 8;
-    int sy = cam_y + ((int)ui->cursor_x + (int)ui->cursor_y) * 4;
+    int sx = cam_x + ((int)ui->cursor_x - (int)ui->cursor_y) * HW;
+    int sy = cam_y + ((int)ui->cursor_x + (int)ui->cursor_y) * HH;
     const char *msg = message ? message : "";
 
     /* The camera only moves when the cursor nears the edge; then recentre. */
-    if (full || sx < CAM_MARGIN_X || sx > VIEW_W - TILE_W - CAM_MARGIN_X ||
-        sy < CAM_MARGIN_Y || sy > VIEW_H - TILE_H - CAM_MARGIN_Y) {
-        cam_x = 136 - ((int)ui->cursor_x - (int)ui->cursor_y) * 8;
-        cam_y = 92 - ((int)ui->cursor_x + (int)ui->cursor_y) * 4;
+    if (full || sx < CAM_MARGIN_X || sx > VIEW_W - TW - CAM_MARGIN_X ||
+        sy < CAM_MARGIN_Y || sy > VIEW_H - TH - CAM_MARGIN_Y) {
+        cam_x = 128 - ((int)ui->cursor_x - (int)ui->cursor_y) * HW;
+        cam_y = 88 - ((int)ui->cursor_x + (int)ui->cursor_y) * HH;
         full = true;
     }
-    sx = cam_x + ((int)ui->cursor_x - (int)ui->cursor_y) * 8;   /* recompute: camera may have moved */
-    sy = cam_y + ((int)ui->cursor_x + (int)ui->cursor_y) * 4;
+    sx = cam_x + ((int)ui->cursor_x - (int)ui->cursor_y) * HW;   /* recompute: camera may have moved */
+    sy = cam_y + ((int)ui->cursor_x + (int)ui->cursor_y) * HH;
 
     /* Changed tiles: redraw each one's footprint, or everything if too many. */
     if (!full && city_dirty_flag) {
@@ -426,14 +496,14 @@ void render_frame(const UiState *ui, uint16_t animation, const char *message) {
                 uint16_t i = (uint16_t)(b * 8 + bit);
                 int tx, ty;
                 if (!(city_dirty[b] & (1u << bit))) continue;
-                tx = cam_x + ((int)(i % MAP_W) - (int)(i / MAP_W)) * 8;
-                ty = cam_y + ((int)(i % MAP_W) + (int)(i / MAP_W)) * 4;
-                if (tx + TILE_W <= 0 || tx >= VIEW_W || ty + TILE_H <= 0 || ty + TILE_H - MAX_SPRITE_H >= VIEW_H) continue;
+                tx = cam_x + ((int)(i % MAP_W) - (int)(i / MAP_W)) * HW;
+                ty = cam_y + ((int)(i % MAP_W) + (int)(i / MAP_W)) * HH;
+                if (tx + TW <= 0 || tx >= VIEW_W || ty + TH <= 0 || ty + TH - MAXH >= VIEW_H) continue;
                 if (n_rects == MAX_DIRTY_RECTS) { full = true; break; }
                 rects[n_rects].x0 = tx;
-                rects[n_rects].y0 = ty + TILE_H - MAX_SPRITE_H;
-                rects[n_rects].x1 = tx + TILE_W;
-                rects[n_rects].y1 = ty + TILE_H;
+                rects[n_rects].y0 = ty + TH - MAXH;
+                rects[n_rects].x1 = tx + TW;
+                rects[n_rects].y1 = ty + TH;
                 n_rects++;
             }
         }
@@ -459,19 +529,44 @@ void render_frame(const UiState *ui, uint16_t animation, const char *message) {
     }
     gfx_SetClipRegion(0, 0, 320, 240);
 
-    if (rc.valid && !world_changed && memcmp(&rc.last, ui, sizeof(UiState)) == 0 &&
-        rc.last_ticks == city.ticks && strcmp(rc.last_msg, msg) == 0) {
-        return;                       /* nothing to show: skip the frame */
+    {
+        bool nothing = rc.valid && !world_changed && memcmp(&rc.last, ui, sizeof(UiState)) == 0 &&
+                       rc.last_ticks == city.ticks && strcmp(rc.last_msg, msg) == 0;
+        bool cars_active = traffic_count() || car_rect_n;
+        uint32_t now = (uint32_t)clock();
+        if (nothing) {
+            uint8_t k;
+            bool hits = false;
+            if (!cars_active || (int32_t)(now - rc.next_car_frame) < 0) return;
+            for (k = 0; k < car_rect_n && !hits; k++) {      /* would erasing a car damage the overlay or HUD? */
+                const Rect *cr = &car_rect[k];
+                if ((rc.ov_drawn && rect_hits(cr, rc.ov.x0, rc.ov.y0, rc.ov.x1 + 1, rc.ov.y1 + 1)) ||
+                    rect_hits(cr, 0, 0, 224, 56) || rect_hits(cr, 44, 96, 244, 120)) hits = true;
+            }
+            if (!hits) {                                     /* cars-only frame: cheap */
+                erase_cars();
+                gfx_SetDrawScreen();
+                draw_cars();
+                gfx_SetDrawBuffer();
+                rc.next_car_frame = now + CAR_FRAME_TICKS;
+                return;
+            }
+        }
+        rc.next_car_frame = now + CAR_FRAME_TICKS;
     }
 
     /* Everything below goes straight to the visible screen. */
     if (!full) {
+        erase_cars();
         if (rc.ov_drawn) blit_world(rc.ov.x0, rc.ov.y0, rc.ov.x1 + 1, rc.ov.y1 + 1);
         blit_world(0, 0, 224, 56);    /* HUD and banners */
         blit_world(44, 96, 244, 120); /* message box     */
+    } else {
+        car_rect_n = 0;               /* the whole world was just redrawn */
     }
     gfx_SetDrawScreen();
 
+    draw_cars();
     gfx_SetClipRegion(0, 0, VIEW_W, VIEW_H);
     if (ui->area_active) {
         gfx_SetColor(C_CYAN);
@@ -518,6 +613,8 @@ static void menu_box(const char *title) {
 void render_title(uint8_t selection, bool has_save) {
     static const char *items[4] = {"NEW CITY", "CONTINUE", "HELP", "EXIT"};
     uint8_t i;
+    uint8_t saved_zs = zs;
+    zs = 0;
     gfx_FillScreen(C_NAVY);
     gfx_SetColor(C_BLUE);
     gfx_FillRectangle(0, 150, 320, 90);
@@ -544,6 +641,7 @@ void render_title(uint8_t selection, bool has_save) {
     gfx_FillRectangle(0, 224, 320, 16);
     text(C_WHITE, 95, 228, "2ND SELECT   ARROWS MOVE");
     text(C_CYAN, 3, 228, METROCE_VERSION);
+    zs = saved_zs;
     gfx_BlitBuffer();
 }
 
@@ -608,7 +706,60 @@ void render_stats(void) {
     text(C_CYAN, 35, 135, "COM DEMAND"); gfx_PrintUInt(stats.com_demand, 1);
     text(C_YELLOW, 35, 150, "IND DEMAND"); gfx_PrintUInt(stats.ind_demand, 1);
     text(C_GRAY, 35, 174, "ZONES NEED ROADS, POWER, WATER + SEWAGE.");
-    text(C_WHITE, 91, 199, "PRESS CLEAR TO RETURN");
+    text(C_WHITE, 46, 199, "RIGHT: GOALS   CLEAR: RETURN");
+    gfx_BlitBuffer();
+}
+
+void render_goals(void) {
+    char title[24];
+    char *p = title;
+    uint8_t i, done = 0;
+    for (i = 0; i < GOAL_COUNT; i++) if (city_goal_done(i)) done++;
+    p = u_str(p, "GOALS  ");
+    p = u_uint(p, done);
+    p = u_str(p, "/");
+    u_uint(p, GOAL_COUNT);
+    menu_box(title);
+    for (i = 0; i < GOAL_COUNT; i++) {
+        int y = 46 + i * 14;
+        uint16_t cur, target;
+        bool ok = city_goal_done(i);
+        int w;
+        city_goal_progress(i, &cur, &target);
+        text(ok ? C_GREEN : C_GRAY, 34, y, ok ? "[X]" : "[ ]");
+        text(ok ? C_WHITE : C_YELLOW, 62, y, city_goal_name(i));
+        w = (int)gfx_GetStringWidth(city_goal_name(i));
+        if (!ok && target > 1 && 62 + w + 8 + 56 < 290) {
+            gfx_SetTextFGColor(C_GRAY);
+            gfx_SetTextXY(62 + w + 8, y);
+            gfx_PrintUInt(cur, 1);
+            gfx_PrintString("/");
+            gfx_PrintUInt(target, 1);
+        }
+    }
+    text(C_WHITE, 46, 199, "LEFT: CITY DATA   CLEAR: RETURN");
+    gfx_BlitBuffer();
+}
+
+/* Placeholder start-up screen: a skyline that grows, then the logo. */
+void render_splash(uint8_t step) {
+    uint8_t i, saved_zs = zs;
+    zs = 0;
+    gfx_FillScreen(C_NAVY);
+    gfx_SetColor(C_BLUE);
+    gfx_FillRectangle(0, 170, 320, 70);
+    for (i = 0; i < 9; i++) {
+        gfx_rletsprite_t *sprite = i & 1 ? com3_0 : res3_0;
+        if (step * 2 >= i * 2 + 2) sprite_at_bottom(sprite, i * 36 - 3, 205 - (i % 3) * 4);
+    }
+    if (step >= 4) {
+        gfx_SetTextScale(4, 4);
+        text(C_WHITE, 34, 50, "METROCE");
+        gfx_SetTextScale(1, 1);
+    }
+    if (step >= 6) text(C_CYAN, 76, 98, "ISOMETRIC CITY SIMULATOR");
+    if (step >= 8) text(C_GRAY, 128, 226, METROCE_VERSION);
+    zs = saved_zs;
     gfx_BlitBuffer();
 }
 
@@ -641,6 +792,7 @@ static const HelpRow help_p1[] = {
     {"TRACE",  "PAUSE / RESUME"},
     {"GRAPH",  "SIMULATION SPEED"},
     {"ZOOM",   "SAVE"},
+    {"MATH",   "ZOOM CLOSE / WIDE"},
     {"MODE",   "THIS HELP"},
     {"CLEAR",  "EXIT (PRESS TWICE)"},
 };
@@ -693,6 +845,18 @@ static const HelpRow help_p6[] = {
     {NULL, "HIGH RES TAX LOWER IT."},
     {NULL, "SERVICES COVER 7-10 TILES."},
 };
+static const HelpRow help_p8[] = {
+    {NULL, "CARS DRIVE ON ROADS THAT SERVE"},
+    {NULL, "BUILDINGS. BIG BUILDINGS = BUSY"},
+    {NULL, "ROADS. A STREET OVER 60%"},
+    {NULL, "CONGESTED COSTS ITS HOMES -5"},
+    {NULL, "HAPPINESS (OVER 90%: -10)."},
+    {NULL, "FIRES BREAK OUT NOW AND THEN."},
+    {NULL, "A FIRE STATION IN RANGE PUTS"},
+    {NULL, "THEM OUT. WITHOUT ONE THE"},
+    {NULL, "BUILDING IS LOST."},
+    {NULL, "ENTER, RIGHT: GOALS TO CHASE."},
+};
 static const HelpRow help_p7[] = {
     {NULL, "BUILDING LEVELS 1 TO 3."},
     {NULL, "HOMES HOLD 10 / 31 / 66 PEOPLE."},
@@ -701,14 +865,14 @@ static const HelpRow help_p7[] = {
     {NULL, "RANK: 100 VILLAGE, 500 TOWN,"},
     {NULL, "2000 CITY, 6000 CAPITAL,"},
     {NULL, "15000 METROPOLIS."},
-    {NULL, "CONGESTION IS DISPLAY ONLY."},
+    {NULL, "TRAFFIC AND FIRES: NEXT PAGE."},
 };
 
 #define PAGE(title, rows) {title, (uint8_t)(sizeof(rows) / sizeof(rows[0])), rows}
 static const HelpPage help_pages[HELP_PAGES] = {
     PAGE("CONTROLS", help_p0), PAGE("CONTROLS", help_p1), PAGE("AREA + UNDO", help_p2),
     PAGE("START HERE", help_p3), PAGE("DEMAND", help_p4), PAGE("UTILITIES", help_p5),
-    PAGE("HAPPINESS", help_p6), PAGE("GROWTH + LIMITS", help_p7),
+    PAGE("HAPPINESS", help_p6), PAGE("GROWTH + LIMITS", help_p7), PAGE("TRAFFIC + EVENTS", help_p8),
 };
 
 void render_help(uint8_t page) {

@@ -38,7 +38,11 @@ Each simulation tick, every zone with a building adds to the city's load, then g
 | Pollution | Power plant radius 5, industrial radius 3 + level |
 | Ranks | Village 100, town 500, city 2000, capital 6000, metropolis 15000 |
 
-Things that do **not** do anything yet: road congestion is shown but affects nothing, and money is unlimited so taxes only move demand and happiness.
+**Traffic and fires (V1.3.0).** A road tile's congestion rises with the buildings beside it (home 11 per level, commercial 14, industrial 17). A home next to a street over 60% loses 5 happiness, over 90% loses 10, so spread buildings over more roads. Once the city has 60 people a fire starts about every 22 ticks on a random built tile; a fire station within 10 tiles puts it out, otherwise the building becomes an empty zone again.
+
+**Goals.** `Enter`, then Right: 50 / 250 / 1000 / 3000 / 6000 citizens, 40 road tiles, happiness 80 at 200+ people, everyone employed at 300+, park + police + fire + school at 150+, and 10 level-3 buildings. They are computed from the live city (not saved), and a toast appears when one is first completed.
+
+Money is unlimited, so taxes only move demand and happiness.
 
 Practical consequences: one plant of each type carries a lot of city early on, so spend effort on **parks, schools and keeping industry away from homes** (pollution is −16 per home in range). Raise service funding for more capacity and happier homes.
 
@@ -51,7 +55,8 @@ src/main.c      frame loop, menus, tool/area/undo commands, sim timing
 src/input.c/.h  keyboard snapshot, edge detection, arrow repeat + acceleration
 src/area.c/.h   cells of an L-shaped path or a filled box
 src/city.c/.h   map, simulation, build/bulldoze, undo, save/load
-src/render.c/.h drawing: tiles, overlays, HUD, menus, help pages
+src/render.c/.h drawing: tiles, zoom, cars layer, overlays, HUD, menus, help pages
+src/traffic.c/.h cars: spawn, drive along roads, despawn when the road is gone
 src/gfx/        generated sprites (tools/make_assets.py -> convimg)
 tests/          host-side tests (tests/run.sh)
 ```
@@ -82,6 +87,8 @@ Profiling in CEmu showed the old renderer spent about 600 ms per frame on the ma
 - **World buffer.** The map lives in the off-screen buffer. `gfx_BlitRectangle` copies only changed rectangles to the visible screen. The cursor, area preview, HUD and messages are drawn directly on the screen; to erase them the matching rectangle is copied back from the world buffer.
 - **Dirty tiles.** `city.c` sets a bit for every tile that changes (build, bulldoze, undo, growth) and also its four neighbours when roads could change shape. The renderer redraws each changed tile's footprint, or everything if more than `MAX_DIRTY_RECTS` visible tiles changed.
 - **Culling (`visible_tiles`).** Only diagonals and columns that can touch the rectangle are visited. The tests compare it against a brute-force check.
+- **Zoom.** `zs` is 0 or 1: tile size, sprite tables and culling all use it; the 32x16 sprites are the `z2_` set made by `tools/make_assets.py`.
+- **Cars.** `traffic.c` moves up to 20 cars between tile centres (about 0.5 s per tile). `render.c` draws them as small rectangles on the screen layer and erases them by copying their old rectangle back from the world buffer. A cars-only frame costs a few blits.
 - **Camera.** It only moves when the cursor gets within 24 px of the view edge, then it recentres (one full redraw). Cursor moves in between cost almost nothing.
 - **Other.** RLET sprites, a minimap sprite rebuilt only when `city_revision` changes, and frames skipped when the UI state, HUD values and tiles are all unchanged.
 
@@ -140,5 +147,5 @@ I looked for existing TI-84 Plus CE games to copy controls from. Honest result:
 
 - **Not run by me.** It compiles with no warnings (CEdev v15.0) and the logic is unit-tested on a PC, but I had no ROM. An emulator pass on V1.1.1 found the layout issue (fixed) and profiled the renderer; V1.2.0's speed-up is unmeasured. The repeat timings, simulation speeds and exact text positions are untested guesses. Layout text uses measured string widths where it matters, but check every screen once.
 - Pressing Up/Down/Left/Right together with `2nd` and `Alpha` relies on the calculator keypad not "ghosting" key combinations. By the key matrix layout it should be fine, but that is also untested.
-- Traffic dots only move when tiles are redrawn. Scrolling, menu exit and large simulation changes still cost a full redraw (expected a few hundred ms).
+- Scrolling, menu exit and large simulation changes still cost a full redraw (expected a few hundred ms).
 - Undo is one level. Congestion does nothing. There is no money system.

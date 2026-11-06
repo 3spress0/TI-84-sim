@@ -69,6 +69,57 @@ converts:
       - tree1.png
       - tree2.png
       - water.png
+      - z2_com1_0.png
+      - z2_com1_1.png
+      - z2_com2_0.png
+      - z2_com2_1.png
+      - z2_com3_0.png
+      - z2_com3_1.png
+      - z2_fire.png
+      - z2_grass0.png
+      - z2_grass1.png
+      - z2_grass2.png
+      - z2_grass3.png
+      - z2_ind1_0.png
+      - z2_ind1_1.png
+      - z2_ind2_0.png
+      - z2_ind2_1.png
+      - z2_ind3_0.png
+      - z2_ind3_1.png
+      - z2_park.png
+      - z2_police.png
+      - z2_power.png
+      - z2_res1_0.png
+      - z2_res1_1.png
+      - z2_res2_0.png
+      - z2_res2_1.png
+      - z2_res3_0.png
+      - z2_res3_1.png
+      - z2_road0.png
+      - z2_road1.png
+      - z2_road10.png
+      - z2_road11.png
+      - z2_road12.png
+      - z2_road13.png
+      - z2_road14.png
+      - z2_road15.png
+      - z2_road2.png
+      - z2_road3.png
+      - z2_road4.png
+      - z2_road5.png
+      - z2_road6.png
+      - z2_road7.png
+      - z2_road8.png
+      - z2_road9.png
+      - z2_school.png
+      - z2_sewage.png
+      - z2_tree0.png
+      - z2_tree1.png
+      - z2_tree2.png
+      - z2_water.png
+      - z2_zone_com.png
+      - z2_zone_ind.png
+      - z2_zone_res.png
       - zone_com.png
       - zone_ind.png
       - zone_res.png

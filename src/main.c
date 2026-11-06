@@ -1,6 +1,7 @@
 #include "city.h"
 #include "input.h"
 #include "render.h"
+#include "traffic.h"
 #include "util.h"
 
 #include <keypadc.h>
@@ -55,6 +56,24 @@ static void help_screen(uint8_t page) {
     }
     wait_release();
     input_sync();
+}
+
+/* Placeholder splash: skyline grows, logo appears; any key skips. */
+static void splash_screen(void) {
+    uint8_t step;
+    for (step = 0; step < 10; step++) {
+        uint8_t wait;
+        render_splash(step);
+        for (wait = 0; wait < 8; wait++) {
+            delay(20);
+            kb_Scan();
+            if (kb_AnyKey()) {
+                wait_release();
+                return;
+            }
+        }
+    }
+    delay(400);
 }
 
 /* Returns 0 for new, 1 for continue, and 2 for exit. */
@@ -161,13 +180,17 @@ static void budget_menu(void) {
 }
 
 static void stats_screen(void) {
+    bool goals = false;
     render_snapshot_backdrop();
     wait_release();
     input_sync();
     for (;;) {
-        render_stats();
+        if (goals) render_goals();
+        else render_stats();
         input_scan();
-        if (leave_key()) break;
+        if (input_pressed(kb_KeyRight)) goals = true;
+        if (input_pressed(kb_KeyLeft)) goals = false;
+        if (input_pressed(kb_KeyClear) || input_pressed(kb_Key2nd) || input_pressed(kb_KeyEnter)) break;
         delay(20);
     }
     wait_release();
@@ -237,7 +260,7 @@ int main(void) {
     UiState ui;
     uint8_t choice;
     uint8_t resume_speed = 1;
-    uint32_t last_sim, message_until = 0, exit_deadline = 0;
+    uint32_t last_sim, last_frame_clock, message_until = 0, exit_deadline = 0;
     const char *message = NULL;
     bool exit_armed = false;
 
@@ -250,6 +273,7 @@ int main(void) {
 
     srand(rtc_Time());
     render_init();
+    splash_screen();
     choice = title_screen();
     if (choice == 2) {
         render_end();
@@ -262,7 +286,9 @@ int main(void) {
     }
 
     input_init();
+    traffic_reset();
     last_sim = clock();
+    last_frame_clock = last_sim;
 
     for (;;) {
         uint32_t now = clock();
@@ -356,6 +382,10 @@ int main(void) {
             ui.speed = ui.speed >= 3 ? 1 : (uint8_t)(ui.speed + 1);
             resume_speed = ui.speed;
             last_sim = now;
+        } else if (input_pressed(kb_KeyMath)) {
+            render_set_zoom(!render_zoom());
+            message = render_zoom() ? "ZOOM: CLOSE" : "ZOOM: WIDE";
+            message_until = now + MS(MESSAGE_MS);
         } else if (input_pressed(kb_KeyEnter)) {
             stats_screen();
             input_sync();
@@ -384,9 +414,24 @@ int main(void) {
 
         /* --- simulation runs on the clock, not on frames --- */
         if (ui.speed && time_due(now, last_sim + MS(sim_ms[ui.speed]))) {
+            const char *event;
+            int8_t goal;
             city_simulate();
             last_sim = now;
+            if ((event = city_take_event()) != NULL) {
+                message = event;
+                message_until = now + MS(2500);
+            } else if ((goal = city_goal_new()) >= 0) {
+                char *p = u_str(msg_buf, "GOAL: ");
+                u_str(p, city_goal_name((uint8_t)goal));
+                message = msg_buf;
+                message_until = now + MS(2500);
+            }
         }
+
+        /* Cars advance by real elapsed time. */
+        traffic_update((uint32_t)((now - last_frame_clock) * 1000UL / 32768UL));
+        last_frame_clock = now;
 
         /* Traffic dots only move when tiles are redrawn, so key them to the sim clock. */
         render_frame(&ui, (uint16_t)(city.ticks << 2), message);

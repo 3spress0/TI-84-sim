@@ -1,5 +1,6 @@
 #include "city.h"
 #include "area.h"
+#include "util.h"
 
 #include <fileioc.h>
 #include <stdlib.h>
@@ -23,6 +24,8 @@ static bool undo_undone;    /* currently showing the "before" state           */
 
 static void mark_dirty(uint16_t i);
 static void mark_dirty_around(uint16_t i);
+static void update_goal_stats(void);
+static void maybe_fire(void);
 
 static void undo_reset(void) {
     undo_pending = false;
@@ -159,6 +162,7 @@ void city_new(void) {
     memset(traffic, 0, sizeof(traffic));
     memset(coverage, 0, sizeof(coverage));
     city_simulate();
+    city_goals_sync();
 }
 
 /* ---- dirty tracking so the renderer only redraws what changed ---- */
@@ -223,6 +227,114 @@ uint16_t city_apply_shape(uint8_t ax, uint8_t ay, uint8_t bx, uint8_t by,
     if (path) area_path(ax, ay, bx, by, flip, shape_cell, &s);
     else area_rect(ax, ay, bx, by, shape_cell, &s);
     return s.changed;
+}
+
+/* ---- goals (derived from the live city, not saved) ---- */
+typedef struct {
+    uint16_t roads, l3, services;      /* services: bit per park/police/fire/school */
+} GoalStats;
+static GoalStats gs;
+static uint16_t goals_reported;        /* goals already announced this session */
+
+static const char *const goal_names[GOAL_COUNT] = {
+    "50 CITIZENS", "250 CITIZENS", "1000 CITIZENS", "3000 CITIZENS", "6000 CITIZENS",
+    "40 ROAD TILES", "HAPPY: H80 AT 200+", "EVERYONE EMPLOYED (300+)",
+    "ALL 4 SERVICES (150+)", "10 LEVEL-3 BUILDINGS"
+};
+
+static void update_goal_stats(void) {
+    uint16_t i;
+    memset(&gs, 0, sizeof(gs));
+    for (i = 0; i < MAP_TILES; i++) {
+        const Tile *t = &city.tiles[i];
+        if (t->type == TILE_ROAD) gs.roads++;
+        else if (t->type == TILE_PARK) gs.services |= 1;
+        else if (t->type == TILE_POLICE) gs.services |= 2;
+        else if (t->type == TILE_FIRE) gs.services |= 4;
+        else if (t->type == TILE_SCHOOL) gs.services |= 8;
+        else if (is_zone(t->type) && t->level >= MAX_LEVEL) gs.l3++;
+    }
+}
+
+const char *city_goal_name(uint8_t i) { return i < GOAL_COUNT ? goal_names[i] : "?"; }
+
+void city_goal_progress(uint8_t i, uint16_t *cur, uint16_t *target) {
+    static const uint16_t pops[5] = {50, 250, 1000, 3000, 6000};
+    uint16_t pop = (uint16_t)(stats.population > 65535 ? 65535 : stats.population);
+    *cur = 0; *target = 1;
+    if (i < 5) { *cur = pop; *target = pops[i]; }
+    else if (i == 5) { *cur = gs.roads; *target = 40; }
+    else if (i == 6) { *cur = pop >= 200 ? stats.happiness : 0; *target = 80; }
+    else if (i == 7) { *cur = (pop >= 300 && stats.jobs >= stats.population / 2) ? 1 : 0; *target = 1; }
+    else if (i == 8) {
+        uint8_t b, n = 0;
+        for (b = 0; b < 4; b++) if (gs.services & (1u << b)) n++;
+        *cur = pop >= 150 ? n : 0; *target = 4;
+    } else if (i == 9) { *cur = gs.l3; *target = 10; }
+}
+
+bool city_goal_done(uint8_t i) {
+    uint16_t cur, target;
+    city_goal_progress(i, &cur, &target);
+    return cur >= target;
+}
+
+static uint16_t goals_done_mask(void) {
+    uint16_t m = 0;
+    uint8_t i;
+    for (i = 0; i < GOAL_COUNT; i++) if (city_goal_done(i)) m |= (uint16_t)(1u << i);
+    return m;
+}
+
+/* Index of a goal that was completed since the last call, or -1. */
+int8_t city_goal_new(void) {
+    uint16_t fresh = goals_done_mask() & (uint16_t)~goals_reported;
+    uint8_t i;
+    for (i = 0; i < GOAL_COUNT; i++) {
+        if (fresh & (1u << i)) { goals_reported |= (uint16_t)(1u << i); return (int8_t)i; }
+    }
+    return -1;
+}
+
+void city_goals_sync(void) {           /* after load/new: do not announce what is already true */
+    update_goal_stats();
+    goals_reported = goals_done_mask();
+}
+
+/* ---- fires: services finally have a job ---- */
+static char event_text[32];
+static bool event_pending;
+
+static void maybe_fire(void) {
+    uint8_t tries;
+    if (stats.population < 60 || rand() % 22) return;
+    for (tries = 0; tries < 60; tries++) {
+        uint16_t i = (uint16_t)(rand() % MAP_TILES);
+        Tile *t = &city.tiles[i];
+        char *p;
+        uint8_t x = (uint8_t)(i % MAP_W), y = (uint8_t)(i / MAP_W);
+        if (!is_zone(t->type) || !t->level) continue;
+        if (coverage[i] & COVERAGE_FIRE) {
+            p = u_str(event_text, "FIRE PUT OUT AT ");
+        } else {
+            t->level = 0;                    /* burned down: the empty zone remains */
+            t->age = 0;
+            mark_dirty(i);
+            p = u_str(event_text, "FIRE AT ");
+        }
+        p = u_uint(p, x);
+        p = u_str(p, ",");
+        p = u_uint(p, y);
+        if (!(coverage[i] & COVERAGE_FIRE)) u_str(p, " - NO COVER");
+        event_pending = true;
+        return;
+    }
+}
+
+const char *city_take_event(void) {
+    if (!event_pending) return NULL;
+    event_pending = false;
+    return event_text;
 }
 
 void city_simulate(void) {
@@ -320,6 +432,19 @@ void city_simulate(void) {
             if (stats.watered_pct < 100) local -= (100 - stats.watered_pct) / 3;
             if (stats.sewage_pct < 100) local -= (100 - stats.sewage_pct) / 4;
             if (!city_road_access(x, y)) local -= 30;
+            {   /* a congested street outside the door is unpleasant */
+                uint8_t worst = 0, k;
+                int nx[4] = {(int)x - 1, (int)x + 1, (int)x, (int)x};
+                int ny[4] = {(int)y, (int)y, (int)y - 1, (int)y + 1};
+                for (k = 0; k < 4; k++) {
+                    uint16_t ni;
+                    if (nx[k] < 0 || ny[k] < 0 || nx[k] >= MAP_W || ny[k] >= MAP_H) continue;
+                    ni = index_of((uint8_t)nx[k], (uint8_t)ny[k]);
+                    if (city.tiles[ni].type == TILE_ROAD && traffic[ni] > worst) worst = traffic[ni];
+                }
+                if (worst > 90) local -= 10;
+                else if (worst > 60) local -= 5;
+            }
             happiness_sum += clamp_int(local);
             happy_homes++;
         }
@@ -368,6 +493,8 @@ void city_simulate(void) {
         }
     }
     city.ticks++;
+    update_goal_stats();
+    maybe_fire();
 }
 
 const char *city_rank(void) {
@@ -441,5 +568,6 @@ bool city_load(void) {
     if (!ok || city.magic != CITY_MAGIC || city.version != CITY_VERSION) return false;
     undo_reset();
     city_simulate();
+    city_goals_sync();
     return true;
 }

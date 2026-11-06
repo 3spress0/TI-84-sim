@@ -154,20 +154,41 @@ def special(name, kind):
 for i, color in enumerate([(83, 139, 67), (86, 135, 66), (80, 132, 65), (91, 140, 70)]):
     grass(f"grass{i}", color)
 
-# Road adjacency bits: west/east/north/south in map coordinates.
-for mask in range(16):
-    im = canvas()
+# Road adjacency bits: west/east/north/south in map coordinates (screen: NW, SE, NE, SW).
+# Roads run from the tile centre to the exact edge midpoints, which line up with the
+# neighbouring tile's opposite midpoint, so adjacent roads join seamlessly.
+def road_tile(mask, k):
+    """k = 1 for 16x8 tiles, 2 for 32x16 tiles."""
+    W, H = 16 * k, 8 * k
+    im = Image.new("RGB", (W, H), TRANSPARENT)
     d = ImageDraw.Draw(im)
-    diamond(d, fill=(107, 111, 105), outline=(168, 164, 138))
-    diamond_inner = [(8, 1), (14, 3), (8, 6), (2, 3)]
-    d.polygon(diamond_inner, fill=(72, 78, 78))
-    center = (8, 3)
-    endpoints = [(4, 2), (12, 4), (12, 2), (4, 5)]
-    for bit, endpoint in enumerate(endpoints):
+    d.polygon([(8 * k, 0), (16 * k - 1, 4 * k - 1), (8 * k, 8 * k - 1), (0, 4 * k - 1)],
+              fill=(83, 139, 67), outline=(58, 105, 53))
+    cx, cy = 8 * k, 4 * k - (1 if k == 1 else 1)
+    mids = [(4 * k, 2 * k), (12 * k, 6 * k - 1), (12 * k, 2 * k), (4 * k, 6 * k - 1)]  # W, E, N, S bits
+    asphalt, shoulder, paint = (62, 66, 72), (128, 130, 122), (216, 200, 108)
+    t = 1.5 * k
+    def band(m, half, color):
+        d.polygon([(cx, cy - half), (m[0], m[1] - half), (m[0], m[1] + half), (cx, cy + half)], fill=color)
+    for bit, m in enumerate(mids):
         if mask & (1 << bit):
-            d.line((center, endpoint), fill=(197, 184, 103))
-    d.point(center, fill=(196, 184, 104))
-    im.save(ROOT / f"road{mask}.png")
+            band(m, t + 1, shoulder)
+    r = (3.5 if mask else 5) * k
+    d.polygon([(cx - r, cy), (cx, cy - r / 2 - 1), (cx + r, cy), (cx, cy + r / 2 + 1)], fill=shoulder)
+    for bit, m in enumerate(mids):
+        if mask & (1 << bit):
+            band(m, t, asphalt)
+    r2 = r - 1.5 * k / 1.0
+    d.polygon([(cx - r2, cy), (cx, cy - r2 / 2), (cx + r2, cy), (cx, cy + r2 / 2)], fill=asphalt)
+    for bit, m in enumerate(mids):
+        if mask & (1 << bit):
+            d.line((cx, cy, (cx + m[0]) / 2, (cy + m[1]) / 2), fill=paint, width=1)
+    return im
+
+
+for mask in range(16):
+    road_tile(mask, 1).save(ROOT / f"road{mask}.png")
+    road_tile(mask, 2).save(ROOT / f"z2_road{mask}.png")
 
 zone("zone_res", (121, 199, 109))
 zone("zone_com", (93, 174, 206))
@@ -188,6 +209,14 @@ for i, color in enumerate([(56, 129, 62), (67, 143, 68), (47, 117, 59)]):
     tree(f"tree{i}", color)
 for kind in ["power", "water", "sewage", "park", "police", "fire", "school"]:
     special(kind, kind)
+
+
+# 2x zoom set: nearest-neighbour upscale of every sprite except the roads (drawn natively above).
+for png in sorted(ROOT.glob("*.png")):
+    if png.name.startswith("z2_"):
+        continue
+    im = Image.open(png)
+    im.resize((im.width * 2, im.height * 2), Image.NEAREST).save(ROOT / f"z2_{png.name}")
 
 files = sorted(p.name for p in ROOT.glob("*.png"))
 yaml = """palettes:
@@ -211,6 +240,7 @@ converts:
   - name: sprites
     palette: global_palette
     transparent-color-index: 0
+    style: rlet
     images:
 """
 yaml += "".join(f"      - {name}\n" for name in files)
@@ -225,3 +255,4 @@ outputs:
 """
 (ROOT / "convimg.yaml").write_text(yaml)
 print(f"Generated {len(files)} isometric sprites in {ROOT}")
+

@@ -1,10 +1,24 @@
-# MetroCE V1.2.2
+# MetroCE V1.3.0
 
 MetroCE is an original isometric city-building sandbox for the **TI-84 Plus CE / CE-T**, including the CE-T Python Edition. Its visual direction is inspired by classic isometric city simulators: diamond terrain, pixel-art towers, trees, roads, traffic, a construction sidebar, and a minimap.
 
 **Sandbox mode has unlimited money.** The challenge comes from designing a functioning city rather than managing a cash balance.
 
 New here? Read [TUTORIAL.md](TUTORIAL.md), or press `Mode` in the game for the built-in help and tutorial.
+
+## Screenshots
+
+Captured in CEmu during testing.
+
+| Main menu | Controls help |
+|---|---|
+| ![Main menu](docs/screenshots/main-menu.png) | ![Controls help](docs/screenshots/help-controls.png) |
+
+| Budget | A loaded city |
+|---|---|
+| ![Budget](docs/screenshots/budget.png) | ![A loaded city](docs/screenshots/loaded-city.png) |
+
+These four were taken on earlier builds. The loaded-city shot predates the sidebar-label fix (the stray letters at the left edge are gone in V1.2.1 and later), and the road art, zoom and cars are newer than all four.
 
 ## Play
 
@@ -32,8 +46,9 @@ New here? Read [TUTORIAL.md](TUTORIAL.md), or press `Mode` in the game for the b
 | `Zoom` | Save to the `METROSAV` AppVar |
 | `Trace` | Pause / resume (resumes at the speed you left) |
 | `Graph` | Cycle simulation speed |
-| `Enter` | City statistics and RCI demand |
-| `Mode` | Help and tutorial (8 pages, Left/Right to flip) |
+| `Enter` | City statistics and RCI demand. Right: the goals list |
+| `Math` | Zoom close / wide (starts close) |
+| `Mode` | Help and tutorial (9 pages, Left/Right to flip) |
 | `Clear` | Press twice to save and exit |
 
 The bottom bar shows the active tool and its number key, what is under the cursor (zones with no road show a red NO ROAD), the simulation speed, and the cursor coordinates.
@@ -50,9 +65,12 @@ The bottom bar shows the active tool and its number key, what is under the curso
 - Industrial and power-plant pollution
 - Population, jobs, unemployment, happiness, and RCI demand
 - Growth, upgrading, and abandonment
+- Moving traffic: cars drive the roads that serve buildings, and congested streets lower happiness
+- Fires that burn buildings down unless a fire station covers them
+- Ten goals to chase (citizens, roads, happiness, employment, services, level-3 buildings)
 - Persistent AppVar save
 
-This is a compact calculator interpretation, not a full Cities: Skylines or SimCity simulation. Utilities use citywide capacity rather than pipe/power-line networks. Road congestion is calculated and displayed but does not currently affect the simulation.
+This is a compact calculator interpretation, not a full Cities: Skylines or SimCity simulation. Utilities use citywide capacity rather than pipe/power-line networks. Congestion is only felt next to homes: a street over 60% costs adjacent homes 5 happiness, over 90% costs 10.
 
 ## Build from source
 
@@ -71,6 +89,15 @@ The generated sprites and convimg configuration are included, so Pillow is not r
 `tests/run.sh` compiles the input, area, undo and cursor-movement logic on your computer (needs `gcc`, not CEdev) against a stubbed keypad. It includes a brute-force check of the visible-tile culling against thousands of random camera positions. It does not run the calculator build.
 
 ## Changelog
+
+**V1.3.0** (look and gameplay)
+- **Roads now connect.** New road art runs from tile centre to the exact edge midpoints, so neighbouring roads join into continuous streets with proper junctions.
+- **Closer camera.** The world starts zoomed in (32x16 tiles, native 2x sprites). `Math` switches back to the wide view. Zoom data adds about 59 KB to the program.
+- **Traffic.** Up to 20 cars drive the roads that serve buildings. They are small coloured blocks drawn above the map and never trigger a full redraw. Busy streets also cost adjacent homes happiness.
+- **Fires.** Once a city has 60 people, fires start now and then. A fire station in range puts them out; otherwise the building drops to an empty zone.
+- **Goals.** Ten goals with progress, a toast when one is completed, and a goals page on the `Enter` screen.
+- **Start-up screen** (placeholder): a skyline grows and the logo appears; any key skips it.
+- README screenshots added from `docs/screenshots`.
 
 **V1.2.2** (menu backdrop)
 - Construction, Budget and City Data panels now draw over the current game view instead of leftover title-screen pixels.

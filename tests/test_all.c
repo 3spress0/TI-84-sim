@@ -4,6 +4,7 @@
 #include "../src/main.c"
 #include "../src/area.h"
 #include "../src/visible.h"
+#include "../src/traffic.h"
 #undef main
 
 #include <assert.h>
@@ -18,6 +19,10 @@ void delay(uint16_t ms) { (void)ms; }
 void render_init(void) {}
 void render_invalidate(void) {}
 void render_snapshot_backdrop(void) {}
+void render_set_zoom(uint8_t z) { (void)z; }
+uint8_t render_zoom(void) { return 1; }
+void render_goals(void) {}
+void render_splash(uint8_t s) { (void)s; }
 void render_end(void) {}
 void render_frame(const UiState *u, uint16_t a, const char *m) { (void)u; (void)a; (void)m; }
 void render_title(uint8_t s, bool h) { (void)s; (void)h; }
@@ -324,8 +329,10 @@ static void visit_cb(uint8_t x, uint8_t y, int sx, int sy, void *c) {
 
 static int test_visible(void) {
     static Visit v;
+    int zs;
     unsigned seed = 12345;
     int trial;
+    for (zs = 0; zs < 2; zs++)
     for (trial = 0; trial < 3000; trial++) {
         int cam_x, cam_y, x0, y0, x1, y1, x, y, i;
         seed = seed * 1103515245u + 12345u;
@@ -337,17 +344,85 @@ static int test_visible(void) {
         seed = seed * 1103515245u + 12345u;
         x1 = x0 + 1 + (int)((seed >> 8) % (320 - x0)); y1 = y0 + 1 + (int)((seed >> 4) % (224 - y0));
         memset(&v, 0, sizeof(v));
-        visible_tiles(cam_x, cam_y, x0, y0, x1, y1, visit_cb, &v);
+        visible_tiles(zs, cam_x, cam_y, x0, y0, x1, y1, visit_cb, &v);
         for (i = 1; i < v.n; i++)                                       /* painter's order */
             CHECK(v.s[i] > v.s[i - 1] || (v.s[i] == v.s[i - 1] && v.x[i] > v.x[i - 1]));
         for (y = 0; y < 64; y++) for (x = 0; x < 64; x++) {
-            int sx = cam_x + (x - y) * 8, sy = cam_y + (x + y) * 4;
-            int bx0 = sx, bx1 = sx + 16, by0 = sy + 8 - MAX_SPRITE_H, by1 = sy + 8;
+            int sx = cam_x + (x - y) * (8 << zs), sy = cam_y + (x + y) * (4 << zs);
+            int bx0 = sx, bx1 = sx + (16 << zs), by0 = sy + (8 << zs) - (MAX_SPRITE_H << zs), by1 = sy + (8 << zs);
             int touches = bx1 > x0 && bx0 < x1 && by1 > y0 && by0 < y1;
             CHECK(v.seen[y][x] <= 1);                                   /* never twice */
             if (touches) CHECK(v.seen[y][x] == 1);                      /* never skipped */
         }
-        CHECK(v.n < 1200);                                              /* and it really culls */
+        CHECK(v.n < (zs ? 800 : 1200));                                              /* and it really culls */
+    }
+    return 0;
+}
+
+static int test_traffic_goals_fire(void) {
+    int i, step, seen = 0;
+    const Car *cars;
+    city_new();
+    traffic_reset();
+    city_apply_shape(5, 5, 25, 5, true, false, TILE_ROAD);
+    city_apply_shape(15, 5, 15, 20, true, false, TILE_ROAD);
+    for (i = 0; i < MAP_TILES; i++) if (city.tiles[i].type == TILE_ROAD) traffic[i] = 40;
+    cars = traffic_cars();
+    for (step = 0; step < 4000; step++) {
+        int k;
+        traffic_update(20);
+        for (k = 0; k < MAX_CARS; k++) if (cars[k].active) {
+            const Car *c = &cars[k];
+            CHECK(city.tiles[c->y * MAP_W + c->x].type == TILE_ROAD);          /* always on a road */
+            CHECK(abs(c->dx) + abs(c->dy) == 1);                               /* one grid step */
+            CHECK(c->x + c->dx >= 0 && c->x + c->dx < MAP_W && c->y + c->dy >= 0 && c->y + c->dy < MAP_H);
+            CHECK(city.tiles[(c->y + c->dy) * MAP_W + c->x + c->dx].type == TILE_ROAD);   /* heading onto a road */
+        }
+        CHECK(traffic_count() <= MAX_CARS);
+        if (traffic_count() > 0) seen = 1;
+    }
+    CHECK(seen);
+    for (i = 0; i < MAP_TILES; i++) if (city.tiles[i].type == TILE_ROAD) { city.tiles[i].type = TILE_EMPTY; traffic[i] = 0; }
+    for (step = 0; step < 400; step++) traffic_update(20);
+    CHECK(traffic_count() == 0);                                              /* bulldozed: cars vanish */
+
+    /* goals: forty roads completes goal 5 exactly once */
+    city_new();
+    CHECK(!city_goal_done(5));
+    city_undo_begin();
+    city_apply_shape(2, 2, 42, 2, true, false, TILE_ROAD);
+    city_simulate();
+    CHECK(city_goal_done(5));
+    CHECK(city_goal_new() == 5);
+    CHECK(city_goal_new() == -1);
+    city_new(); CHECK(!city_goal_done(5));
+
+    /* fires: with no station buildings can burn; with a station they are saved */
+    { int burned_without = 0, burned_with = 0, round;
+      for (round = 0; round < 2; round++) {
+          int x, y, lost = 0, events = 0, t;
+          city_new();
+          city_apply_shape(2, 10, 40, 10, true, false, TILE_ROAD);
+          city_apply_shape(2, 13, 40, 13, true, false, TILE_ROAD);
+          city_apply_shape(16, 11, 24, 12, false, false, TILE_RESIDENTIAL);
+          city_apply_shape(2, 5, 2, 5, false, false, TILE_POWER);
+          city_apply_shape(3, 5, 3, 5, false, false, TILE_WATER);
+          city_apply_shape(4, 5, 4, 5, false, false, TILE_SEWAGE);
+          if (round == 1) { city_apply_shape(20, 16, 20, 16, false, false, TILE_FIRE); }
+          for (y = 11; y <= 12; y++) for (x = 16; x <= 24; x++) { Tile *tl = &city.tiles[y * MAP_W + x]; tl->level = 3; }
+          city_simulate();
+          for (t = 0; t < 3000 && events < 3; t++) {
+              int before = 0, after = 0;
+              for (y = 11; y <= 12; y++) for (x = 16; x <= 24; x++) before += city.tiles[y * MAP_W + x].level;
+              city_simulate();
+              for (y = 11; y <= 12; y++) for (x = 16; x <= 24; x++) after += city.tiles[y * MAP_W + x].level;
+              if (city_take_event()) { events++; if (after < before) lost++; }
+          }
+          CHECK(events > 0);
+          if (round == 0) burned_without = lost; else burned_with = lost;
+      }
+      CHECK(burned_without > 0);        /* uncovered fires destroy buildings */
+      CHECK(burned_with == 0);          /* a fire station in range prevents the loss */
     }
     return 0;
 }
@@ -358,6 +433,7 @@ int main(void) {
     if (test_area())  return 1;
     if (test_city())  return 1;
     if (test_move())  return 1;
+    if (test_traffic_goals_fire()) return 1;
     printf("ALL TESTS PASSED (%d checks)\n", checks);
     return 0;
 }

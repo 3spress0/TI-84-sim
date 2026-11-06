@@ -8,7 +8,7 @@
 #define MAP_H 64
 #define MAP_TILES (MAP_W * MAP_H)
 #define SAVE_NAME "METROSAV"
-#define METROCE_VERSION "V1.2.2"
+#define METROCE_VERSION "V1.3.0"
 
 #define COVERAGE_PARK      0x01
 #define COVERAGE_POLICE    0x02
@@ -97,6 +97,14 @@ uint16_t city_apply_shape(uint8_t ax, uint8_t ay, uint8_t bx, uint8_t by,
 extern uint8_t city_dirty[MAP_TILES / 8];
 extern bool city_dirty_flag;
 extern uint16_t city_revision;
+
+#define GOAL_COUNT 10
+const char *city_goal_name(uint8_t i);
+void city_goal_progress(uint8_t i, uint16_t *cur, uint16_t *target);
+bool city_goal_done(uint8_t i);
+int8_t city_goal_new(void);             /* newly completed goal index, or -1 */
+void city_goals_sync(void);             /* call after new/load */
+const char *city_take_event(void);      /* fire message once, or NULL */
 
 void city_undo_begin(void);
 uint8_t city_undo_toggle(void);
